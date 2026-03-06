@@ -8,6 +8,10 @@ from matplotlib import colors
 from scipy.fft import fft, fftfreq
 from functools import partial
 
+# 中文字体
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
 from ..file.osr_file_parser import osr_file
 from ..file.osu_file_parser import osu_file
 
@@ -15,7 +19,7 @@ from ..algorithm.utils import match_notes_and_presses
 
 async def run_plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file=None):
     loop = asyncio.get_running_loop()
-    func = partial(plot_comprehensive, osr_obj, output_dir, osu_obj=osu_obj)
+    func = partial(plot_comprehensive, output_dir, osr_obj, osu_obj=osu_obj)
     img_path = await loop.run_in_executor(None, func)
     return img_path
 
@@ -29,7 +33,7 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
         生成的图片路径
     """
     pressset = osr_obj.pressset
-    mod = osr_obj.mod
+    mod_obj = osr_obj.mod          # 可能是 Mod 对象或整数
     player_name = osr_obj.player_name
     timestamp = osr_obj.timestamp
     file_basename = os.path.basename(osr_obj.file_path).replace('.osr', '')
@@ -43,10 +47,17 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
     n50 = osr_obj.judge["50"]
     misses = osr_obj.judge["0"]
 
+    # 获取用于显示的 mod 字符串和用于计算的整数
+    mod_str = str(mod_obj)
+    if hasattr(mod_obj, 'value'):
+        mod_int = mod_obj.value
+    else:
+        mod_int = int(mod_obj) if isinstance(mod_obj, (int, np.integer)) else 0
+
     # 计算速度修正系数
     corrector = 1
-    if mod != 0:
-        mod_bin = bin(mod)[2:].zfill(32)
+    if mod_int != 0:
+        mod_bin = bin(mod_int)[2:].zfill(32)
         if mod_bin[-7] == '1':
             corrector = 2/3
         elif mod_bin[-9] == '1':
@@ -78,6 +89,12 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
 
     presscount = f'320={gekis}, 300={n300}\n200={katus}, 100={n100}\n50={n50}, 0={misses}'
 
+    # 处理 mod 显示字符串：去掉 "Mod." 前缀（如果存在）
+    if mod_str.startswith("Mod."):
+        display_mod = mod_str[4:].replace("|", "\n")
+    else:
+        display_mod = mod_str.replace("|", "\n")
+
     plt.grid()
     plt.xticks(fontsize=15)
     plt.yticks(fontsize=15)
@@ -86,7 +103,7 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
     plt.ylabel('count', fontsize=15)
     plt.legend(shadow=True, fontsize=10, ncol=2)
     plt.text(0.5, 0.5,
-             mod[4:].replace("|", "\n") +
+             display_mod +
              f"\nscores={score}\naccuracy={acc:.2f}%\nRatio={ratio:.2f}" if ratio != 0 else "Inf",
              va='bottom', ha='left')
     plt.text(159.5, 0.5, presscount + f"\nRI={corrector:.2f}", ha='right', va='bottom')
@@ -289,27 +306,28 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
     """
     data = osr_obj.get_data()
     pressset = data["pressset"]
-    mod = data["mod"]
+    mod_obj = data["mod"]            # 可能是 Mod 对象或整数
     player_name = data["player_name"]
-    # timestamp = data["timestamp"]
     file_basename = os.path.basename(osr_obj.file_path).replace('.osr', '')
-    # acc = data["accuracy"]
-    # ratio = data["ratio"]
-    # score = data["score"]
-    # judge = data["judge"]
     press_times = data["press_times"]
     sample_rate = data["sample_rate"]
 
+    # 获取用于计算的 mod 整数值
+    if hasattr(mod_obj, 'value'):
+        mod_int = mod_obj.value
+    else:
+        mod_int = int(mod_obj) if isinstance(mod_obj, (int, np.integer)) else 0
+
     # 计算速度修正系数（用于按压分布图）
     corrector = 1
-    if mod != 0:
-        mod_bin = bin(mod)[2:].zfill(32) if isinstance(mod, int) else ''
+    if mod_int != 0:
+        mod_bin = bin(mod_int)[2:].zfill(32)
         if len(mod_bin) >= 7 and mod_bin[-7] == '1':
             corrector = 2/3
         elif len(mod_bin) >= 9 and mod_bin[-9] == '1':
             corrector = 4/3
 
-    # 构建按压分布图数据（复用 plot_pressingtime 的逻辑）
+    # 构建按压分布图数据
     basetime = []
     presstime_count = []
     for key_presses in pressset:

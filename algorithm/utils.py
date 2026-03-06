@@ -186,9 +186,6 @@ def parse_cmd(cmd_text: str):
                 err_msg.append(f"无效的面缝参数: {part[4:]}; ")
             i += 1
             continue
-
-        # 未知参数，忽略或警告
-        err_msg.append(f"未知参数: {part}; ")
         i += 1
 
     return speed_rate, od_flag, cvt_flag, bid, mod_display, err_msg
