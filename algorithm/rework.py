@@ -460,10 +460,10 @@ def est_diff(sr: float, LN_ratio: float, column_count: int) -> str:
                 RC_diff = name
                 break
         if RC_diff is None:
-            if sr < 1.502:
-                RC_diff = "< intro 1 low"
-            elif sr > 11.129:
-                RC_diff = "> theta high"
+            if sr < 3.5085:
+                RC_diff = "< regular 0 low"
+            elif sr > 10.544:
+                RC_diff = "> regular stellium high"
             else:
                 RC_diff = "未知RC难度"
 
@@ -476,10 +476,10 @@ def est_diff(sr: float, LN_ratio: float, column_count: int) -> str:
                 LN_diff = name
                 break
         if LN_diff is None:
-            if sr < 4.832:
-                LN_diff = "< LN 5 mid"
-            elif sr > 9.589:
-                LN_diff = "> LN 17 high"
+            if sr < 4.836:
+                LN_diff = "< LN 3 low"
+            elif sr > 10.666:
+                LN_diff = "> LN stellium high"
             else:
                 LN_diff = "未知LN难度"
         

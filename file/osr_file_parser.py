@@ -32,7 +32,8 @@ class osr_file:
             "0" : info.misses
         }
         self.score = info.score
-        self.acc = ((info.gekis + info.number_300s) * 300 + info.katus * 200 + info.number_100s * 100 + info.number_50s * 50) / (info.gekis + info.number_300s + info.number_100s + info.number_50s + info.misses + info.katus * 300) * 100
+        totObj = info.gekis + info.number_300s + info.number_100s + info.number_50s + info.misses + info.katus
+        self.acc = (((info.gekis + info.number_300s) * 300 + info.katus * 200 + info.number_100s * 100 + info.number_50s * 50) / (totObj * 300) * 100)
         self.ratio = info.gekis / info.number_300s if info.number_300s > 0 else 0
         self.timestamp = info.timestamp
         self.mod = info.mod_combination

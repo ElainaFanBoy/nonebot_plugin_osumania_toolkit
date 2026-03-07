@@ -9,7 +9,7 @@ from scipy.fft import fft, fftfreq
 from functools import partial
 
 # 中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC']
+# plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC']
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
 from ..file.osr_file_parser import osr_file
@@ -104,7 +104,7 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
     plt.legend(shadow=True, fontsize=10, ncol=2)
     plt.text(0.5, 0.5,
              display_mod +
-             f"\nscores={score}\naccuracy={acc:.2f}%\nRatio={ratio:.2f}" if ratio != 0 else "Inf",
+             f"\nscores={score}\naccuracy={round(acc,2)}%\nRatio={ratio:.2f}" if ratio != 0 else "Inf",
              va='bottom', ha='left')
     plt.text(159.5, 0.5, presscount + f"\nRI={corrector:.2f}", ha='right', va='bottom')
     plt.title(f"{file_basename}\n,{player_name},{timestamp}")
@@ -189,7 +189,7 @@ def plot_spectrum(osr_obj: osr_file, output_dir: str) -> str:
     plt.figure(figsize=(10, 6))
     plt.plot(xf, amplitude, color='darkgreen', linewidth=1)
     plt.fill_between(xf, amplitude, alpha=0.15, color='green')
-    plt.title(f"脉冲序列频谱\n玩家: {player_name} | 文件: {file_basename} | 采样率: {sample_rate:.0f} Hz",
+    plt.title(f"脉冲序列频谱\nPlayer: {player_name} | File: {file_basename} | SampleRate: {sample_rate:.0f} Hz",
               fontweight='bold', fontsize=12)
     plt.xlabel("频率 (Hz)")
     plt.ylabel("幅度")

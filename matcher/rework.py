@@ -68,7 +68,7 @@ async def handle_rework(event: MessageEvent):
             # 计算星数
             sr, LN_ratio, column_count = await get_rework_result(str(tmp_file), speed_rate, od_flag, cvt_flag)
 
-            await rework.send(get_result_text(parse_osu_filename(file_name), mod_display, sr, speed_rate, od_flag, LN_ratio, column_count), at_sender=True)
+            await rework.send(get_result_text(parse_osu_filename(file_name), mod_display, sr, speed_rate, od_flag, LN_ratio, column_count), reply_to=True)
             
         except Exception as e:
             if str(e) == "ParseError":
@@ -90,7 +90,7 @@ async def handle_rework(event: MessageEvent):
             tmp_file, file_name = await download_file_by_id(CACHE_DIR,bid)
             sr, LN_ratio, column_count = await get_rework_result(str(tmp_file), speed_rate, od_flag, cvt_flag)
 
-            await rework.send(get_result_text(parse_osu_filename(file_name), mod_display, sr, speed_rate, od_flag, LN_ratio, column_count), at_sender=True)
+            await rework.send(get_result_text(parse_osu_filename(file_name), mod_display, sr, speed_rate, od_flag, LN_ratio, column_count), reply_to=True)
         except Exception as e:
             await rework.send(f"{e}")
         finally:
