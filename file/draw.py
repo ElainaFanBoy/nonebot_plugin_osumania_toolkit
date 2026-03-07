@@ -8,7 +8,7 @@ from matplotlib import colors
 from scipy.fft import fft, fftfreq
 from functools import partial
 
-# 中文字体
+# 中文字体 
 # plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC']
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
@@ -189,10 +189,10 @@ def plot_spectrum(osr_obj: osr_file, output_dir: str) -> str:
     plt.figure(figsize=(10, 6))
     plt.plot(xf, amplitude, color='darkgreen', linewidth=1)
     plt.fill_between(xf, amplitude, alpha=0.15, color='green')
-    plt.title(f"脉冲序列频谱\nPlayer: {player_name} | File: {file_basename} | SampleRate: {sample_rate:.0f} Hz",
+    plt.title(f"Pulse Spectrum\nPlayer: {player_name} | File: {file_basename} | SampleRate: {sample_rate:.0f} Hz",
               fontweight='bold', fontsize=12)
-    plt.xlabel("频率 (Hz)")
-    plt.ylabel("幅度")
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Amplitude")
     plt.xlim(0, 500)
     plt.grid(True, alpha=0.3)
 
@@ -226,9 +226,9 @@ def plot_scatter(osr_obj: osr_file, osu_obj: osu_file, output_dir: str) -> str:
     plt.figure(figsize=(12, 6))
     plt.scatter(note_times, deltas, s=1, alpha=0.5, c='blue')
     plt.axhline(y=0, color='red', linestyle='--', linewidth=0.5)
-    plt.xlabel('物件时间 (ms)')
-    plt.ylabel('Delta t (玩家 - 物件) ms')
-    plt.title(f'Delta t 散点图 - {osr_obj.player_name}')
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Delta_t (ms)')
+    plt.title(f'Delta_t scatter - {osr_obj.player_name}')
     plt.grid(alpha=0.3)
 
     safe_base = os.path.basename(osr_obj.file_path).replace('.osr', '')
@@ -247,7 +247,7 @@ def plot_life(osr_obj: osr_file, output_dir: str) -> str:
     返回:
         生成的图片路径
     """
-    life_str = osr_obj.get_data()["life_bar_graph"]
+    life_str = osr_obj.life_bar_graph
     if not life_str:
         raise ValueError("无生命条数据")
 
@@ -274,9 +274,9 @@ def plot_life(osr_obj: osr_file, output_dir: str) -> str:
     plt.figure(figsize=(12, 4))
     plt.plot(times, lives, color='green', linewidth=1.5)
     plt.fill_between(times, 0, lives, alpha=0.2, color='green')
-    plt.xlabel('时间 (ms)')
-    plt.ylabel('血量')
-    plt.title(f'血量变化 - {osr_obj.player_name}')
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Health')
+    plt.title(f'HP Bar - {osr_obj.player_name}')
     plt.grid(alpha=0.3)
     plt.ylim(0, 100)
 
@@ -370,7 +370,7 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax1.set_xlim(0, 160)
         ax1.set_xlabel('pressing time (ms)')
         ax1.set_ylabel('count')
-        ax1.set_title('按压时长分布')
+        ax1.set_title('Duration Distribution')
         ax1.legend(fontsize='x-small', ncol=2)
         ax1.grid(alpha=0.3)
 
@@ -378,9 +378,9 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax2.plot(xf, amp, color='darkgreen', linewidth=1)
         ax2.fill_between(xf, amp, alpha=0.15, color='green')
         ax2.set_xlim(0, 500)
-        ax2.set_xlabel('频率 (Hz)')
-        ax2.set_ylabel('幅度')
-        ax2.set_title(f'脉冲序列频谱 (采样率 {sample_rate:.0f} Hz)')
+        ax2.set_xlabel('Frequency (Hz)')
+        ax2.set_ylabel('Amplitude')
+        ax2.set_title(f'Pulse Spectrum (Sample Rate {sample_rate:.0f} Hz)')
         ax2.grid(alpha=0.3)
 
         # 左下：delta_t 直方图
@@ -390,12 +390,12 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
             deltas = [d for _, d in delta_list]
             ax3.hist(deltas, bins=50, alpha=0.7, color='steelblue', edgecolor='black')
             ax3.set_xlabel('Delta t (ms)')
-            ax3.set_ylabel('频次')
-            ax3.set_title('Delta t 分布')
+            ax3.set_ylabel('Count')
+            ax3.set_title('Delta t Distribution')
             ax3.grid(alpha=0.3)
         else:
-            ax3.text(0.5, 0.5, '无匹配数据', ha='center', va='center')
-            ax3.set_title('Delta t 分布')
+            ax3.text(0.5, 0.5, 'No matching data', ha='center', va='center')
+            ax3.set_title('Delta t Distribution')
 
         # 右下：delta_t 散点图
         _, matched_pairs = match_notes_and_presses(osu_obj, osr_obj)
@@ -404,15 +404,15 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
             deltas_scatter = [p[2] - p[1] for p in matched_pairs]
             ax4.scatter(note_times, deltas_scatter, s=1, alpha=0.5, c='blue')
             ax4.axhline(y=0, color='red', linestyle='--', linewidth=0.5)
-            ax4.set_xlabel('物件时间 (ms)')
+            ax4.set_xlabel('Note Time (ms)')
             ax4.set_ylabel('Delta t (ms)')
-            ax4.set_title('Delta t 散点图')
+            ax4.set_title('Delta t Scatter')
             ax4.grid(alpha=0.3)
         else:
-            ax4.text(0.5, 0.5, '无匹配数据', ha='center', va='center')
-            ax4.set_title('Delta t 散点图')
+            ax4.text(0.5, 0.5, 'No matching data', ha='center', va='center')
+            ax4.set_title('Delta t Scatter')
 
-        fig.suptitle(f'综合回放分析 - {player_name} | {file_basename}', fontsize=14, fontweight='bold')
+        fig.suptitle(f'Replay Analysis - {player_name} | {file_basename}', fontsize=14, fontweight='bold')
         plt.tight_layout()
         output_path = os.path.join(output_dir, re.sub(r'[\\/*?:"<>|]', '_', file_basename) + "_comprehensive.png")
     else:
@@ -428,7 +428,7 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax1.set_xlim(0, 160)
         ax1.set_xlabel('pressing time (ms)')
         ax1.set_ylabel('count')
-        ax1.set_title('按压时长分布')
+        ax1.set_title('Duration Distribution')
         ax1.legend(fontsize='x-small', ncol=2)
         ax1.grid(alpha=0.3)
 
@@ -436,12 +436,12 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax2.plot(xf, amp, color='darkgreen', linewidth=1)
         ax2.fill_between(xf, amp, alpha=0.15, color='green')
         ax2.set_xlim(0, 500)
-        ax2.set_xlabel('频率 (Hz)')
-        ax2.set_ylabel('幅度')
-        ax2.set_title(f'脉冲序列频谱 (采样率 {sample_rate:.0f} Hz)')
+        ax2.set_xlabel('Frequency (Hz)')
+        ax2.set_ylabel('Amplitude')
+        ax2.set_title(f'Pulse Spectrum (Sample Rate {sample_rate:.0f} Hz)')
         ax2.grid(alpha=0.3)
 
-        fig.suptitle(f'回放分析 - {player_name} | {file_basename}', fontsize=14, fontweight='bold')
+        fig.suptitle(f'Replay Analysis - {player_name} | {file_basename}', fontsize=14, fontweight='bold')
         plt.tight_layout()
         output_path = os.path.join(output_dir, re.sub(r'[\\/*?:"<>|]', '_', file_basename) + "_dual.png")
 
