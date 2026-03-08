@@ -4,6 +4,8 @@ import numpy as np
 from collections import Counter
 from osrparse import GameMode
 
+from nonebot.log import logger
+
 def findkey(x = 0):
     keyset = [0 for i in range(18)]
     (a, keyset[0]) = (x//2, x%2)
@@ -83,6 +85,13 @@ class osr_file:
             self.sample_rate = 1000 / most_common_interval
         else:
             self.sample_rate = float('inf')
+            
+        logger.debug(f"按下事件总数(len(self.press_events)): {len(self.press_events)}")
+        logger.debug(f"最后按下时间: {max(self.press_times) if self.press_times else 0} ms")
+        logger.debug(f"按下事件时间样本（前10个）：{str(self.press_times[:10])}")
+        logger.debug(f"按下事件时间样本（后10个）：{str(self.press_times[-10:])}")
+        logger.debug(f"按下事件总数(len(self.press_times))：{len(self.press_times)}")
+        # logger.debug(f"各列按下事件数量：", {col: len([t for c, t in self.press_events if c == col]) for col in range(18)})
             
         self.status = "OK"
         

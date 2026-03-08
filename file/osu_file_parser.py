@@ -1,5 +1,7 @@
 import numpy as np
 
+from nonebot.log import logger
+
 def string_to_int(s):
     return int(float(s))
 
@@ -81,6 +83,11 @@ class osu_file:
         self.LN_ratio = self.get_LN_ratio()
         self.note_times = self.get_note_times()
         self.status = "OK"
+        logger.debug(f"谱面物件总数: {len(self.note_starts)}")
+        logger.debug(f"谱面最后物件时间: {max(self.note_starts) if self.note_starts else 0} ms")
+        logger.debug(f"谱面物件时间样本（前10个）：{str(self.note_starts[:10])}")
+        logger.debug(f"谱面物件时间样本（后10个）：{str(self.note_starts[-10:])}")
+        # logger.debug("各列物件数量：", {col: len(times) for col, times in self.note_times.items()})
 
     def parse_hit_object(self, object_line):
         params = object_line.split(",")

@@ -18,6 +18,7 @@ CACHE_DIR = get_plugin_cache_dir()
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 pressingtime = on_command("pressingtime", aliases={"按压"})
+# pressingtime = on_command("pt", aliases={"按压"}) # 临时变动
 
 @pressingtime.handle()
 async def handle_pressingtime(event: MessageEvent):

@@ -134,7 +134,8 @@ def plot_delta(osr_obj: osr_file, osu_obj: osu_file, output_dir: str):
         delta_by_col.setdefault(col, []).append(d)
 
     plt.figure(figsize=(12, 6))
-    bins = np.linspace(-200, 200, 100)
+    miss_band = 188 - 3 * osu_obj.od
+    bins = np.linspace(-miss_band, miss_band, 200)
     for col, deltas in delta_by_col.items():
         plt.hist(deltas, bins=bins, alpha=0.5, label=f'Col {col+1}', histtype='stepfilled')
     plt.xlabel('Delta Time (ms)')
@@ -249,7 +250,7 @@ def plot_life(osr_obj: osr_file, output_dir: str) -> str:
     """
     life_str = osr_obj.life_bar_graph
     if not life_str:
-        raise ValueError("无生命条数据")
+        raise ValueError("无血条数据")
 
     # 解析 "time|life,time|life,..."
     points = []
@@ -261,13 +262,13 @@ def plot_life(osr_obj: osr_file, output_dir: str) -> str:
             continue
         try:
             t = int(parts[0])
-            life = float(parts[1])
+            life = float(parts[1]) * 100
             points.append((t, life))
         except ValueError:
             continue
 
     if not points:
-        raise ValueError("生命条数据解析失败")
+        raise ValueError("血条数据解析失败")
 
     times, lives = zip(*points)
 
@@ -275,7 +276,7 @@ def plot_life(osr_obj: osr_file, output_dir: str) -> str:
     plt.plot(times, lives, color='green', linewidth=1.5)
     plt.fill_between(times, 0, lives, alpha=0.2, color='green')
     plt.xlabel('Time (ms)')
-    plt.ylabel('Health')
+    plt.ylabel('Health (%)')
     plt.title(f'HP Bar - {osr_obj.player_name}')
     plt.grid(alpha=0.3)
     plt.ylim(0, 100)
@@ -384,7 +385,6 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax2.grid(alpha=0.3)
 
         # 左下：delta_t 直方图
-        from ..algorithm.utils import match_notes_and_presses
         delta_list, _ = match_notes_and_presses(osu_obj, osr_obj)
         if delta_list:
             deltas = [d for _, d in delta_list]
