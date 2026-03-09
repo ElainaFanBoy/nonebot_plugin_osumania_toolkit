@@ -158,7 +158,7 @@ async def handle_first(event: MessageEvent, state: T_State):
 
 @delta.got("user_file")
 # 输入 1 跳过（将执行无谱面操作），输入 0 取消。
-async def handle_file(state: T_State, user_file: Message = Arg()):
+async def handle_file(state: T_State, user_file: Message = Arg("user_file")):
     
     match state["status"]:
         case "Fail" | "Finish":
@@ -191,8 +191,8 @@ async def handle_file(state: T_State, user_file: Message = Arg()):
     if not file_url:
         await delta.finish("无法获取文件下载链接。")
     file_name = os.path.basename(file_name)
-    if not file_name.lower().endswith(".osr"):
-        await delta.finish("请回复 .osr 格式的回放文件。")
+    if not file_name.lower().endswith(".osu"):
+        await delta.finish("请发送 .osu 格式的谱面文件。")
     if not file_url:
         await delta.finish("无法获取文件下载链接。")
 

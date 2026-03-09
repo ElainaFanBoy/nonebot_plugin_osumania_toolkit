@@ -146,15 +146,17 @@ async def handle_first(event: MessageEvent, state: T_State):
                 await analyze.send(MessageSegment.image(f"file://{output_path}"))
                 await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
         except FinishedException:
+            pass    
+        except Exception as e:
+            state["status"] = "Fail"
+            await analyze.send(f"{e}")
+        finally:
             if osr_path and osr_path.exists():
                 asyncio.create_task(cleanup_temp_file(osr_path))
             if osu_path and osu_path.exists():
                 asyncio.create_task(cleanup_temp_file(osu_path))
             if output_path and Path(output_path).exists():
-                asyncio.create_task(cleanup_temp_file(Path(output_path)))    
-        except Exception as e:
-            state["status"] = "Fail"
-            await analyze.send(f"{e}")
+                asyncio.create_task(cleanup_temp_file(Path(output_path)))
         
     else:
         # 无 bid
@@ -166,27 +168,36 @@ async def handle_first(event: MessageEvent, state: T_State):
         return
 
 @analyze.got("user_file")
-async def handle_file(state: T_State, user_msg: Message = Arg()):
-    
-    match state["status"]:
-        case "Fail" | "Finish":
-            if osr_path and osr_path.exists():
-                asyncio.create_task(cleanup_temp_file(osr_path))
-            if osu_path and osu_path.exists():
-                asyncio.create_task(cleanup_temp_file(osu_path))
-            if output_path and Path(output_path).exists():
-                asyncio.create_task(cleanup_temp_file(Path(output_path))) 
-            await analyze.finish()
-        case _:
-            pass    
-    
+async def handle_file(state: T_State, user_msg: Message = Arg("user_file")):
+    # 从 state 中获取之前存储的对象
+    osr = state.get("osr")
+    osr_path = state.get("osr_path")
+    if osr is None or osr_path is None:
+        await analyze.finish("状态异常，请重新开始。")
+
+    # 定义可能用到的路径变量
+    osu_path = None
+    output_path = None
+
+    # 检查状态
+    if state.get("status") in ("Fail", "Finish"):
+        # 清理文件
+        if osr_path and osr_path.exists():
+            asyncio.create_task(cleanup_temp_file(osr_path))
+        if osu_path and osu_path.exists():
+            asyncio.create_task(cleanup_temp_file(osu_path))
+        if output_path and Path(output_path).exists():
+            asyncio.create_task(cleanup_temp_file(Path(output_path)))
+        await analyze.finish()
+        return
+
     # 检查用户是否发送了文件
     file_seg = None
     for seg in user_msg:
         if seg.type == "file":
             file_seg = seg
             break
-        
+
     if not file_seg:
         text = user_msg.extract_plain_text().strip()
         if text == "0":
@@ -208,70 +219,177 @@ async def handle_file(state: T_State, user_msg: Message = Arg()):
                 else:
                     await analyze.send(MessageSegment.image(f"file://{output_path}"))
                     await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+            except FinishedException:
+                pass
             except Exception as e:
-                await analyze.send
+                await analyze.send(f"错误：{e}")
+            finally:
+                if output_path and Path(output_path).exists():
+                    asyncio.create_task(cleanup_temp_file(Path(output_path)))
         else:
             await analyze.reject("输入无效，请发送 .osu 文件，或输入 1 跳过，输入 0 取消。")
+    else:
+        # 处理用户发送的 .osu 文件
+        file_name = file_seg.data.get("file", "")
+        file_url = file_seg.data.get("url", "")
+        if not file_name or not file_url:
+            await analyze.finish("文件信息不完整。")
+        file_name = os.path.basename(file_name)
+        if not file_name.lower().endswith(".osu"):
+            await analyze.finish("请发送 .osu 格式的谱面文件。")
 
-    
-    file_name = file_seg.data.get("file", "")
-    file_url = file_seg.data.get("url", "")
-    
-    if not file_name:
-        await analyze.finish("无法获取文件名。")
-    if not file_url:
-        await analyze.finish("无法获取文件下载链接。")
-    file_name = os.path.basename(file_name)
-    if not file_name.lower().endswith(".osr"):
-        await analyze.finish("请回复 .osr 格式的回放文件。")
-    if not file_url:
-        await analyze.finish("无法获取文件下载链接。")
+        osu_path = CACHE_DIR / safe_filename(file_name)
+        try:
+            success = await download_file(file_url, osu_path)
+            if not success:
+                await analyze.finish("文件下载失败，请稍后重试。")
 
-    osu_path = CACHE_DIR / safe_filename(file_name)
-    osr = state["osr"]
-    osr_path = state["osr_path"]
-    file_err_msg = []
-    
-    try:
-        success = await download_file(file_url, osu_path)
-        if not success:
-            await analyze.finish("文件下载失败，请稍后重试。")
-            
-        osu = osu_file(osu_path)
-        osu.process()
-        match osu.status:
-            case "NotMania":
-                file_err_msg.append("该谱面不是 Mania 模式。")
-            case "init":
-                file_err_msg.append("谱面尚未process。")
-            case "OK":
-                pass
-            case _:
-                pass
-            
-        if file_err_msg:
+            osu = osu_file(osu_path)
+            osu.process()
+            file_err_msg = []
+            match osu.status:
+                case "NotMania":
+                    file_err_msg.append("该谱面不是 Mania 模式。")
+                case "init":
+                    file_err_msg.append("谱面尚未process。")
+                case _:
+                    pass
+            if file_err_msg:
                 await analyze.finish("错误:\n" + "\n".join(file_err_msg))
-                
-        await analyze.send(f"已收到文件，请稍候...") 
-        output_path = await run_plot_comprehensive(str(CACHE_DIR), osr, osu)
-        result = await run_analyze_cheating(osr, osu)
-        reason_str = "\n".join(result["reasons"]) if result["reasons"] else "无分析结果。"
-        if result["cheat"] or result["sus"]:
-            if result["cheat"]:
-                await analyze.send(MessageSegment.image(f"file://{output_path}"))
-                await analyze.finish(f"<!>此成绩检测到作弊：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+
+            await analyze.send(f"已收到文件，请稍候...")
+            output_path = await run_plot_comprehensive(str(CACHE_DIR), osr, osu)
+            result = await run_analyze_cheating(osr, osu)
+            reason_str = "\n".join(result["reasons"]) if result["reasons"] else "无分析结果。"
+            if result["cheat"] or result["sus"]:
+                if result["cheat"]:
+                    await analyze.send(MessageSegment.image(f"file://{output_path}"))
+                    await analyze.finish(f"<!>此成绩检测到作弊：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+                else:
+                    await analyze.send(MessageSegment.image(f"file://{output_path}"))
+                    await analyze.finish(f"<*>此成绩检测到可疑：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
             else:
                 await analyze.send(MessageSegment.image(f"file://{output_path}"))
-                await analyze.finish(f"<*>此成绩检测到可疑：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
-        else:
-            await analyze.send(MessageSegment.image(f"file://{output_path}"))
-            await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
-    except FinishedException:
-        if osr_path and osr_path.exists():
-            asyncio.create_task(cleanup_temp_file(osr_path))
-        if osu_path and osu_path.exists():
-            asyncio.create_task(cleanup_temp_file(osu_path))
-        if output_path and Path(output_path).exists():
-            asyncio.create_task(cleanup_temp_file(Path(output_path)))    
-    except Exception as e:
-        await analyze.send(f"{e}")
+                await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+        except FinishedException:
+            pass
+        except Exception as e:
+            await analyze.send(f"错误：{e}")
+        finally:
+            if osr_path and osr_path.exists():
+                asyncio.create_task(cleanup_temp_file(osr_path))
+            if osu_path and osu_path.exists():
+                asyncio.create_task(cleanup_temp_file(osu_path))
+            if output_path and Path(output_path).exists():
+                asyncio.create_task(cleanup_temp_file(Path(output_path)))
+
+# @analyze.got("user_file")
+# async def handle_file(state: T_State, user_msg: Message = Arg("user_file")):
+    
+#     match state["status"]:
+#         case "Fail" | "Finish":
+#             if osr_path and osr_path.exists():
+#                 asyncio.create_task(cleanup_temp_file(osr_path))
+#             if osu_path and osu_path.exists():
+#                 asyncio.create_task(cleanup_temp_file(osu_path))
+#             if output_path and Path(output_path).exists():
+#                 asyncio.create_task(cleanup_temp_file(Path(output_path))) 
+#             await analyze.finish()
+#         case _:
+#             pass    
+    
+#     # 检查用户是否发送了文件
+#     file_seg = None
+#     for seg in user_msg:
+#         if seg.type == "file":
+#             file_seg = seg
+#             break
+        
+#     if not file_seg:
+#         text = user_msg.extract_plain_text().strip()
+#         if text == "0":
+#             await analyze.finish("操作已取消。")
+#         elif text == "1":
+#             # 无osu文件分析
+#             await analyze.send("处理中，请稍后...")
+#             try:
+#                 output_path = await run_plot_comprehensive(str(CACHE_DIR), osr)
+#                 result = await run_analyze_cheating(osr)
+#                 reason_str = "\n".join(result["reasons"]) if result["reasons"] else "无分析结果。"
+#                 if result["cheat"] or result["sus"]:
+#                     if result["cheat"]:
+#                         await analyze.send(MessageSegment.image(f"file://{output_path}"))
+#                         await analyze.finish(f"<!>此成绩检测到作弊：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+#                     else:
+#                         await analyze.send(MessageSegment.image(f"file://{output_path}"))
+#                         await analyze.finish(f"<*>此成绩检测到可疑：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+#                 else:
+#                     await analyze.send(MessageSegment.image(f"file://{output_path}"))
+#                     await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+#             except Exception as e:
+#                 await analyze.send(f"{e}")
+#         else:
+#             await analyze.reject("输入无效，请发送 .osu 文件，或输入 1 跳过，输入 0 取消。")
+
+    
+#     file_name = file_seg.data.get("file", "")
+#     file_url = file_seg.data.get("url", "")
+    
+#     if not file_name:
+#         await analyze.finish("无法获取文件名。")
+#     if not file_url:
+#         await analyze.finish("无法获取文件下载链接。")
+#     file_name = os.path.basename(file_name)
+#     if not file_name.lower().endswith(".osr"):
+#         await analyze.finish("请回复 .osr 格式的回放文件。")
+#     if not file_url:
+#         await analyze.finish("无法获取文件下载链接。")
+
+#     osu_path = CACHE_DIR / safe_filename(file_name)
+#     osr = state["osr"]
+#     osr_path = state["osr_path"]
+#     file_err_msg = []
+    
+#     try:
+#         success = await download_file(file_url, osu_path)
+#         if not success:
+#             await analyze.finish("文件下载失败，请稍后重试。")
+            
+#         osu = osu_file(osu_path)
+#         osu.process()
+#         match osu.status:
+#             case "NotMania":
+#                 file_err_msg.append("该谱面不是 Mania 模式。")
+#             case "init":
+#                 file_err_msg.append("谱面尚未process。")
+#             case "OK":
+#                 pass
+#             case _:
+#                 pass
+            
+#         if file_err_msg:
+#                 await analyze.finish("错误:\n" + "\n".join(file_err_msg))
+                
+#         await analyze.send(f"已收到文件，请稍候...") 
+#         output_path = await run_plot_comprehensive(str(CACHE_DIR), osr, osu)
+#         result = await run_analyze_cheating(osr, osu)
+#         reason_str = "\n".join(result["reasons"]) if result["reasons"] else "无分析结果。"
+#         if result["cheat"] or result["sus"]:
+#             if result["cheat"]:
+#                 await analyze.send(MessageSegment.image(f"file://{output_path}"))
+#                 await analyze.finish(f"<!>此成绩检测到作弊：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+#             else:
+#                 await analyze.send(MessageSegment.image(f"file://{output_path}"))
+#                 await analyze.finish(f"<*>此成绩检测到可疑：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+#         else:
+#             await analyze.send(MessageSegment.image(f"file://{output_path}"))
+#             await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+#     except FinishedException:
+#         if osr_path and osr_path.exists():
+#             asyncio.create_task(cleanup_temp_file(osr_path))
+#         if osu_path and osu_path.exists():
+#             asyncio.create_task(cleanup_temp_file(osu_path))
+#         if output_path and Path(output_path).exists():
+#             asyncio.create_task(cleanup_temp_file(Path(output_path)))    
+#     except Exception as e:
+#         await analyze.send(f"{e}")

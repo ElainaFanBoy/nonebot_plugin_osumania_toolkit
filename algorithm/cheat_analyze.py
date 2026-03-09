@@ -1,5 +1,6 @@
 import numpy as np
 import asyncio
+import traceback
 
 from scipy.fft import fft, fftfreq
 from collections import Counter
@@ -11,13 +12,13 @@ from ..file.osu_file_parser import osu_file
 
 async def run_analyze_cheating(osr_obj: osr_file, osu_obj: osu_file=None):
     loop = asyncio.get_running_loop()
-    # 使用线程池执行同步函数
-    result = await loop.run_in_executor(
-        None,  # 使用默认线程池
-        analyze_cheating,
-        osr_obj,
-        osu_obj
-    )
+    def wrapped():
+        try:
+            return analyze_cheating(osr_obj, osu_obj)
+        except Exception as e:
+            traceback.print_exc()
+            raise
+    result = await loop.run_in_executor(None, wrapped)
     return result
 
 def analyze_time_domain(data: dict) -> dict:
@@ -335,7 +336,7 @@ def analyze_pulse_spectrum(data: dict) -> dict:
         else:
             if peak_hz < 30:
                 pass
-            elif peak_hz > 30:
+            elif peak_hz > 30 and peak_hz < 50:
                 reason = f"脉冲序列分析：主峰 {peak_hz:.1f} Hz (信噪比={snr:.1f})，标记为可疑。"
                 sus = True
                 cheat = False

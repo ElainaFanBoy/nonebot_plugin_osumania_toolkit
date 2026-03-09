@@ -155,7 +155,7 @@ async def handle_first(event: MessageEvent, state: T_State):
         return
 
 @scatter.got("user_file")
-async def handle_file(state: T_State, user_file: Message = Arg()):
+async def handle_file(state: T_State, user_file: Message = Arg("user_file")):
     
     match state["status"]:
         case "Fail" | "Finish":
@@ -188,8 +188,8 @@ async def handle_file(state: T_State, user_file: Message = Arg()):
     if not file_url:
         await scatter.finish("无法获取文件下载链接。")
     file_name = os.path.basename(file_name)
-    if not file_name.lower().endswith(".osr"):
-        await scatter.finish("请回复 .osr 格式的回放文件。")
+    if not file_name.lower().endswith(".osu"):
+        await scatter.finish("请发送 .osu 格式的谱面文件。")
     if not file_url:
         await scatter.finish("无法获取文件下载链接。")
 

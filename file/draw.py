@@ -2,6 +2,7 @@ import re
 import os
 import numpy as np
 import asyncio
+import traceback
 
 from matplotlib import pyplot as plt
 from matplotlib import colors
@@ -19,8 +20,13 @@ from ..algorithm.utils import match_notes_and_presses
 
 async def run_plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file=None):
     loop = asyncio.get_running_loop()
-    func = partial(plot_comprehensive, output_dir, osr_obj, osu_obj=osu_obj)
-    img_path = await loop.run_in_executor(None, func)
+    def wrapped():
+        try:
+            return plot_comprehensive(output_dir, osr_obj, osu_obj=osu_obj)
+        except Exception as e:        
+            traceback.print_exc()
+            raise
+    img_path = await loop.run_in_executor(None, wrapped)
     return img_path
 
 def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
@@ -68,12 +74,14 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
     presstime = []
     for key_presses in pressset:
         if key_presses:
-            maxpress = max(key_presses)
+            valid_presses = [d for d in key_presses if d >= 0]
+            if not valid_presses:
+                continue
+            maxpress = max(valid_presses)
             t = np.linspace(0, maxpress, maxpress + 1) * corrector
             count = np.zeros(maxpress + 1)
-            for d in key_presses:
-                if d >= 0:
-                    count[d] += 1
+            for d in valid_presses:
+                count[d] += 1
             basetime.append(t)
             presstime.append(count)
 
@@ -341,12 +349,15 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
     presstime_count = []
     for key_presses in pressset:
         if key_presses:
-            maxpress = max(key_presses)
+            # 过滤掉负数
+            valid_presses = [d for d in key_presses if d >= 0]
+            if not valid_presses:
+                continue
+            maxpress = max(valid_presses)
             t = np.linspace(0, maxpress, maxpress + 1) * corrector
             count = np.zeros(maxpress + 1)
-            for d in key_presses:
-                if d >= 0:
-                    count[d] += 1
+            for d in valid_presses:
+                count[d] += 1
             basetime.append(t)
             presstime_count.append(count)
     keyc = len(basetime)
