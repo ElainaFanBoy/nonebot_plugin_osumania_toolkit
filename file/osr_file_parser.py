@@ -284,28 +284,10 @@ class osr_file:
                     # 键释放，记录按压时长（原始时间）
                     # 此处将按压时长存入 pressset_raw，稍后根据速度因子缩放
                     # 为了方便，先暂存在临时字典，最后再统一处理
-                    pass  # 我们稍后统一处理按压时长，因为需要释放事件
+                    pass  # 稍后统一处理按压时长，因为需要释放事件
                     # 实际可在释放时直接存入，但需要知道原始时长
             onset = r_onset
 
-        # 现在需要构建按压时长（原始）列表 pressset_raw
-        # 由于我们只有按下和释放事件，需要重建。简单的方法是：
-        # 从 press_events_raw 中按列整理按下和释放，计算持续时间。
-        # 但您原有代码中，pressset 是在循环中实时计算的，并且依赖于 timeset。
-        # 为了最小改动，我们可以保留原计算逻辑，但将 timeset 的累积基于原始时间。
-        # 实际上，原代码中 timeset 的累积是正确的，只要 w 是原始时间。
-        # 我们只需要在最后将按压时长（存储在 pressset 中）进行缩放即可。
-        # 但原代码中 pressset 是在循环内直接 append 的，且使用了 timeset[k]（原始时间）。
-        # 所以 pressset 已经存储了原始时长。
-
-        # 由于我们已经修改了循环，删除了原有的 pressset 填充代码，现在需要重新加入。
-        # 最好将原循环完整保留，仅修改时间累加和跳过定位帧的部分。
-
-        # 建议：复制原有循环，但将 current_time 改为 current_time_raw，并跳过定位帧。
-        # 原代码中 pressset 的填充依赖于 timeset 和 onset 的变化，这部分可以保留。
-        # 我们直接修改原有循环，添加定位帧跳过，并确保 timeset 使用原始时间。
-
-        # 重写循环如下：
         pressed_start = {}
         current_time_raw = 0
         onset = np.zeros(18)
@@ -383,9 +365,40 @@ class osr_file:
 
         # 估算采样率（使用实时间隔）
         if self.intervals:
-            interval_counts = Counter(self.intervals)
-            most_common_interval, _ = interval_counts.most_common(1)[0]
-            self.sample_rate = 1000 / most_common_interval
+            # 改进的采样率估算算法
+            # 1. 过滤掉异常大的间隔（可能由于暂停、定位帧等）
+            valid_intervals = [i for i in self.intervals if 0 < i <= 100]
+            if not valid_intervals:
+                valid_intervals = self.intervals
+            
+            # 2. 使用众数和中位数结合的方法
+            interval_counts = Counter(valid_intervals)
+            if interval_counts:
+                # 获取前3个最常见的间隔
+                common_intervals = interval_counts.most_common(3)
+                # 计算加权平均间隔（权重为出现次数）
+                total_count = sum(count for _, count in common_intervals)
+                weighted_interval = sum(interval * count for interval, count in common_intervals) / total_count
+                
+                # 3. 同时计算中位数间隔
+                sorted_intervals = sorted(valid_intervals)
+                median_interval = sorted_intervals[len(sorted_intervals) // 2]
+                
+                # 4. 取加权平均和中位数的较小值（更接近真实采样间隔）
+                avg_interval = min(weighted_interval, median_interval)
+                
+                # 5. 计算采样率（Hz）
+                self.sample_rate = 1000 / avg_interval
+                
+                # 6. 常见采样率取整（60Hz, 120Hz, 144Hz, 240Hz, 360Hz等）
+                common_rates = [60, 120, 144, 240, 360, 480, 1000]
+                closest_rate = min(common_rates, key=lambda x: abs(x - self.sample_rate))
+                if abs(closest_rate - self.sample_rate) < 5:  # 允许5Hz误差
+                    self.sample_rate = closest_rate
+                elif self.sample_rate > 1000:  # 如果估算过高，限制在1000Hz
+                    self.sample_rate = 1000
+            else:
+                self.sample_rate = float('inf')
         else:
             self.sample_rate = float('inf')
 
