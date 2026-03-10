@@ -54,6 +54,7 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
     misses = osr_obj.judge["0"]
 
     # 获取用于显示的 mod 字符串和用于计算的整数
+    mods_list = osr_obj.mods if hasattr(osr_obj, 'mods') else []
     mod_str = str(mod_obj)
     if hasattr(mod_obj, 'value'):
         mod_int = mod_obj.value
@@ -97,11 +98,18 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
 
     presscount = f'320={gekis}, 300={n300}\n200={katus}, 100={n100}\n50={n50}, 0={misses}'
 
-    # 处理 mod 显示字符串：去掉 "Mod." 前缀（如果存在）
-    if mod_str.startswith("Mod."):
-        display_mod = mod_str[4:].replace("|", "\n")
+    if mods_list:
+        # 将模组列表转换为多行字符串，每行最多3个模组
+        mod_lines = []
+        for i in range(0, len(mods_list), 3):
+            mod_lines.append(", ".join(mods_list[i:i+3]))
+        display_mod = "\n".join(mod_lines)
     else:
-        display_mod = mod_str.replace("|", "\n")
+        # 回退到原来的显示方式
+        if mod_str.startswith("Mod."):
+            display_mod = mod_str[4:].replace("|", "\n")
+        else:
+            display_mod = mod_str.replace("|", "\n")
 
     plt.grid()
     plt.xticks(fontsize=15)
@@ -328,7 +336,8 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
     file_basename = os.path.basename(osr_obj.file_path).replace('.osr', '')
     press_times = data["press_times"]
     sample_rate = data["sample_rate"]
-
+    mods_list = data.get("mods", [])  # 获取模组列表
+    
     # 获取用于计算的 mod 整数值
     if hasattr(mod_obj, 'value'):
         mod_int = mod_obj.value
@@ -393,6 +402,10 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax1.set_title('Duration Distribution')
         ax1.legend(fontsize='x-small', ncol=2)
         ax1.grid(alpha=0.3)
+        
+        # 在按压分布图中添加RI信息
+        ax1.text(0.02, 0.98, f'RI={corrector:.2f}', transform=ax1.transAxes, 
+                fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
         # 右上：频谱图
         ax2.plot(xf, amp, color='darkgreen', linewidth=1)
@@ -417,6 +430,16 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
             ax3.set_ylabel('Count')
             ax3.set_title('Delta t Distribution')
             ax3.grid(alpha=0.3)
+            
+            # 在delta_t直方图中添加统计信息
+            if deltas:
+                mean_delta = np.mean(deltas)
+                std_delta = np.std(deltas)
+                unique_count = len(np.unique(deltas))
+                stats_text = f'Mean: {mean_delta:.2f}ms\nStd: {std_delta:.2f}ms\nUnique: {unique_count}'
+                ax3.text(0.02, 0.98, stats_text, transform=ax3.transAxes,
+                        fontsize=9, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5))
         else:
             ax3.text(0.5, 0.5, 'No matching data', ha='center', va='center')
             ax3.set_title('Delta t Distribution')
@@ -432,13 +455,23 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
             ax4.set_ylabel('Delta t (ms)')
             ax4.set_title('Delta t Scatter')
             ax4.grid(alpha=0.3)
+            
+            # 在散点图中添加模组信息
+            if mods_list:
+                mods_text = "Mods: " + ", ".join(mods_list[:5])  # 只显示前5个模组
+                if len(mods_list) > 5:
+                    mods_text += "..."
+                ax4.text(0.02, 0.98, mods_text, transform=ax4.transAxes,
+                        fontsize=9, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
         else:
             ax4.text(0.5, 0.5, 'No matching data', ha='center', va='center')
             ax4.set_title('Delta t Scatter')
 
+        # 主标题
         fig.suptitle(f'Replay Analysis - {player_name} | {file_basename}', fontsize=14, fontweight='bold')
         plt.tight_layout()
-        output_path = os.path.join(output_dir, re.sub(r'[\\/*?:"<>|]', '_', file_basename) + "_comprehensive.png")
+        output_path = os.path.join(output_dir, re.sub(r'[\/*?:"<>|]', '_', file_basename) + "_comprehensive.png")
     else:
         # 无 osu_obj，只绘制两个图：按压分布 + 频谱
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
@@ -455,6 +488,10 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax1.set_title('Duration Distribution')
         ax1.legend(fontsize='x-small', ncol=2)
         ax1.grid(alpha=0.3)
+        
+        # 在按压分布图中添加RI信息
+        ax1.text(0.02, 0.98, f'RI={corrector:.2f}', transform=ax1.transAxes, 
+                fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
         # 右：频谱
         ax2.plot(xf, amp, color='darkgreen', linewidth=1)
@@ -464,10 +501,19 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         ax2.set_ylabel('Amplitude')
         ax2.set_title(f'Pulse Spectrum (Sample Rate {sample_rate:.0f} Hz)')
         ax2.grid(alpha=0.3)
+        
+        # 在频谱图中添加模组信息
+        if mods_list:
+            mods_text = "Mods: " + ", ".join(mods_list[:5])  # 只显示前5个模组
+            if len(mods_list) > 5:
+                mods_text += "..."
+            ax2.text(0.02, 0.98, mods_text, transform=ax2.transAxes,
+                    fontsize=9, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5))
 
         fig.suptitle(f'Replay Analysis - {player_name} | {file_basename}', fontsize=14, fontweight='bold')
         plt.tight_layout()
-        output_path = os.path.join(output_dir, re.sub(r'[\\/*?:"<>|]', '_', file_basename) + "_dual.png")
+        output_path = os.path.join(output_dir, re.sub(r'[\/*?:"<>|]', '_', file_basename) + "_dual.png")
 
     plt.savefig(output_path)
     plt.close()

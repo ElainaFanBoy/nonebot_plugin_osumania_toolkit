@@ -83,7 +83,7 @@ async def handle_rework(event: MessageEvent):
         return
     
     elif bid is None:
-        await rework.finish("请回复一条包含 .osr 文件的消息，或使用 b<谱面ID> 指定谱面。")
+        await rework.finish("请回复一条包含 .osu 文件的消息，或使用 b<谱面ID> 指定谱面。")
     
     else:
         try:

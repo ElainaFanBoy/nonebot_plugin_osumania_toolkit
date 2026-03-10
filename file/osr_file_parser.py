@@ -6,6 +6,42 @@ import numpy as np
 from collections import Counter
 from nonebot.log import logger
 
+MOD_MAPPING = {
+    0: "None",
+    1: "NoFail",
+    2: "Easy",
+    4: "TouchDevice",
+    8: "Hidden",
+    16: "HardRock",
+    32: "SuddenDeath",
+    64: "DoubleTime",
+    128: "Relax",
+    256: "HalfTime",
+    512: "Nightcore",
+    1024: "Flashlight",
+    2048: "Autoplay",
+    4096: "SpunOut",
+    8192: "Autopilot",
+    16384: "Perfect",
+    32768: "Key4",
+    65536: "Key5",
+    131072: "Key6",
+    262144: "Key7",
+    524288: "Key8",
+    1048576: "FadeIn",
+    2097152: "Random",
+    4194304: "Cinema",
+    8388608: "TargetPractice",
+    16777216: "Key9",
+    33554432: "Coop",
+    67108864: "Key1",
+    134217728: "Key3",
+    268435456: "Key2",
+    536870912: "ScoreV2",
+    1073741824: "Mirror",
+}
+
+
 # ---------- 辅助函数 ----------
 def read_uleb128(data, offset):
     """从字节流中读取ULEB128编码的整数，返回(值, 新偏移)"""
@@ -40,7 +76,7 @@ def read_string(data, offset):
         return "", offset
 
 class ReplayEvent:
-    """模拟osrparse的事件对象，仅包含time_delta和keys"""
+    """模拟osrparse的事件对象，仅包含time_delta和keys""" 
     def __init__(self, time_delta, keys):
         self.time_delta = time_delta
         self.keys = keys
@@ -118,6 +154,9 @@ class osr_file:
             return
         self.mod = struct.unpack('<i', data[offset:offset+4])[0]
         offset += 4
+        
+        # mod列表
+        self.mods = self._parse_mods(self.mod)
 
         # HP字符串
         self.life_bar_graph, offset = read_string(data, offset)
@@ -261,6 +300,7 @@ class osr_file:
             "status": self.status,
             "player_name": self.player_name,
             "mod": self.mod,
+            "mods": self.mods,
             "score": self.score,
             "accuracy": self.acc,
             "ratio": self.ratio,
@@ -274,3 +314,22 @@ class osr_file:
             "file_path": self.file_path,
             "judge": self.judge
         }
+        
+    def _parse_mods(self, mod_value: int) -> list:
+        """将模组整数值解析为模组名称列表"""
+        if mod_value == 0:
+            return ["None"]
+        
+        mods = []
+        # 检查每个模组位
+        for bit_value, mod_name in MOD_MAPPING.items():
+            if bit_value == 0:  # 跳过None
+                continue
+            if mod_value & bit_value:
+                mods.append(mod_name)
+        
+        # 特殊处理：Nightcore总是和DoubleTime一起出现
+        if "Nightcore" in mods and "DoubleTime" in mods:
+            mods.remove("DoubleTime")  # 只显示Nightcore
+        
+        return mods
