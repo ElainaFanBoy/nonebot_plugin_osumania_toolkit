@@ -237,10 +237,15 @@ class osr_file:
             return
 
         frames = decompressed.split(',')
-        pressed_start = {}
-        current_time = 0
-        onset = np.zeros(18)
-        timeset = np.zeros(18)
+        pressed_start = {}          # 记录每个键的按下起始时间（原始时间）
+        current_time_raw = 0         # 累积原始时间
+        onset = np.zeros(18)        # 当前帧的按键状态
+        timeset = np.zeros(18)      # 当前键已持续的时间（原始时间）
+
+        # 用于存储原始数据
+        intervals_raw = []
+        press_events_raw = []        # 每个元素为 (col, time_raw)
+        press_times_raw = []         # 所有按下时刻的原始时间
 
         for frame in frames:
             if not frame:
@@ -250,56 +255,187 @@ class osr_file:
                 continue
             w = int(parts[0])
             x_val = float(parts[1])
+            y_val = float(parts[2])   # 坐标 y，用于检测定位帧
+
+            # 跳过种子帧
             if w == -12345:
-                # 种子帧，跳过
                 continue
-            current_time += w
-            self.intervals.append(w)
+
+            # 检测并跳过定位帧 (256, -500)
+            if abs(x_val - 256) < 1e-6 and abs(y_val + 500) < 1e-6:
+                continue
+
+            # 累加原始时间
+            current_time_raw += w
+            intervals_raw.append(w)
+
             keys_bitmask = int(x_val)
-
-            # 记录原始事件
-            self.play_data.append(ReplayEvent(w, keys_bitmask))
-
             r_onset = findkey(keys_bitmask)
 
-            # 检测新按下的键
+            # 检测新按下的键（原始时间）
             for k, l in enumerate(r_onset):
                 if onset[k] == 0 and l == 1:
-                    self.press_times.append(current_time)
-                    self.press_events.append((k, current_time))
+                    press_times_raw.append(current_time_raw)
+                    press_events_raw.append((k, current_time_raw))
 
             timeset += onset * w
             for k, l in enumerate(r_onset):
                 if onset[k] != 0 and l == 0:
-                    self.pressset[k].append(int(timeset[k]))
+                    # 键释放，记录按压时长（原始时间）
+                    # 此处将按压时长存入 pressset_raw，稍后根据速度因子缩放
+                    # 为了方便，先暂存在临时字典，最后再统一处理
+                    pass  # 我们稍后统一处理按压时长，因为需要释放事件
+                    # 实际可在释放时直接存入，但需要知道原始时长
+            onset = r_onset
+
+        # 现在需要构建按压时长（原始）列表 pressset_raw
+        # 由于我们只有按下和释放事件，需要重建。简单的方法是：
+        # 从 press_events_raw 中按列整理按下和释放，计算持续时间。
+        # 但您原有代码中，pressset 是在循环中实时计算的，并且依赖于 timeset。
+        # 为了最小改动，我们可以保留原计算逻辑，但将 timeset 的累积基于原始时间。
+        # 实际上，原代码中 timeset 的累积是正确的，只要 w 是原始时间。
+        # 我们只需要在最后将按压时长（存储在 pressset 中）进行缩放即可。
+        # 但原代码中 pressset 是在循环内直接 append 的，且使用了 timeset[k]（原始时间）。
+        # 所以 pressset 已经存储了原始时长。
+
+        # 由于我们已经修改了循环，删除了原有的 pressset 填充代码，现在需要重新加入。
+        # 最好将原循环完整保留，仅修改时间累加和跳过定位帧的部分。
+
+        # 建议：复制原有循环，但将 current_time 改为 current_time_raw，并跳过定位帧。
+        # 原代码中 pressset 的填充依赖于 timeset 和 onset 的变化，这部分可以保留。
+        # 我们直接修改原有循环，添加定位帧跳过，并确保 timeset 使用原始时间。
+
+        # 重写循环如下：
+        pressed_start = {}
+        current_time_raw = 0
+        onset = np.zeros(18)
+        timeset = np.zeros(18)
+        intervals_raw = []
+        press_events_raw = []
+        press_times_raw = []
+        pressset_raw = [[] for _ in range(18)]   # 原始按压时长
+
+        for frame in frames:
+            if not frame:
+                continue
+            parts = frame.split('|')
+            if len(parts) < 4:
+                continue
+            w = int(parts[0])
+            x_val = float(parts[1])
+            y_val = float(parts[2])
+            if w == -12345:
+                continue
+            if abs(x_val - 256) < 1e-6 and abs(y_val + 500) < 1e-6:
+                continue
+            current_time_raw += w
+            intervals_raw.append(w)
+            keys_bitmask = int(x_val)
+            r_onset = findkey(keys_bitmask)
+
+            for k, l in enumerate(r_onset):
+                if onset[k] == 0 and l == 1:
+                    press_times_raw.append(current_time_raw)
+                    press_events_raw.append((k, current_time_raw))
+                    # 可选：记录按下起始时间（用于计算时长），但 timeset 已处理
+
+            timeset += onset * w
+            for k, l in enumerate(r_onset):
+                if onset[k] != 0 and l == 0:
+                    # 释放，记录原始按压时长
+                    pressset_raw[k].append(int(timeset[k]))
                     timeset[k] = 0
             onset = r_onset
 
-        # 过滤无效轨道
-        valid_pressset = [p for p in self.pressset if len(p) > 5]
-        if len(valid_pressset) < 2:
-            self.status = "tooFewKeys"
-        else:
-            self.status = "OK"
+        # 现在我们有原始数据
+        self.intervals_raw = intervals_raw
+        self.press_events_raw = press_events_raw
+        self.press_times_raw = press_times_raw
+        self.pressset_raw = pressset_raw
 
-        # 估算采样率
+        # 计算速度因子和实时缩放系数
+        speed_factor = 1.0
+        try:
+            mod_int = int(self.mod)
+        except Exception:
+            mod_int = 0
+        if mod_int != 0:
+            mod_bin = bin(mod_int)[2:].zfill(32)
+            # DT (位6) 或 Nightcore (位9) 实际 DT 和 NC 都使用 speed_factor=1.5
+            if (mod_int & 64) or (mod_int & 512):
+                speed_factor = 1.5
+            elif mod_int & 256:   # HalfTime
+                speed_factor = 0.75
+        # corrector = 1/speed_factor，用于将原始时间转换为实时时间
+        corrector = 1.0 / speed_factor
+
+        self.corrector = corrector
+        self.speed_factor = speed_factor
+
+        # 生成实时时间数据（用于分析和绘图）
+        self.press_times = [int(t * corrector) for t in press_times_raw]
+        self.press_events = [(col, int(t * corrector)) for col, t in press_events_raw]
+        self.intervals = [int(w * corrector) for w in intervals_raw]
+        self.pressset = [
+            [int(d * corrector) for d in col_data] if col_data else []
+            for col_data in pressset_raw
+        ]
+
+        # 估算采样率（使用实时间隔）
         if self.intervals:
             interval_counts = Counter(self.intervals)
             most_common_interval, _ = interval_counts.most_common(1)[0]
             self.sample_rate = 1000 / most_common_interval
         else:
             self.sample_rate = float('inf')
+
+        # 过滤无效轨道（使用原始数据判断？用 pressset_raw 或 pressset 均可）
+        valid_pressset = [p for p in self.pressset if len(p) > 5]
+        if len(valid_pressset) < 2:
+            self.status = "tooFewKeys"
+        else:
+            self.status = "OK"
             
         logger.debug(f"按下事件总数(len(self.press_events)): {len(self.press_events)}")
         logger.debug(f"按下事件总数(len(self.press_times))：{len(self.press_times)}")
         logger.debug(f"按下事件时间样本（前10个）：{str(self.press_times[:10])}")
         logger.debug(f"按下事件时间样本（后10个）：{str(self.press_times[-10:])}")
 
+        # # 如果存在 Mirror 模组，进行水平镜像（轨道翻转）
+        # if self.mod & 1073741824:  # Mirror 位 (1 << 30)
+        #     # 确定有效轨道数（列数）
+        #     # 找出 pressset 中非空轨道的最大索引
+        #     max_col = -1
+        #     for col_idx, presses in enumerate(self.pressset):
+        #         if presses:
+        #             max_col = max(max_col, col_idx)
+        #     if max_col >= 0:
+        #         column_count = max_col + 1
+        #         # 镜像 pressset
+        #         mirrored_pressset = [[] for _ in range(18)]
+        #         for col in range(column_count):
+        #             mirrored_col = column_count - 1 - col
+        #             mirrored_pressset[mirrored_col] = self.pressset[col]
+        #         # 镜像 press_events
+        #         mirrored_events = []
+        #         for col, t in self.press_events:
+        #             if col < column_count:
+        #                 mirrored_col = column_count - 1 - col
+        #                 mirrored_events.append((mirrored_col, t))
+        #             else:
+        #                 mirrored_events.append((col, t))
+        #         self.pressset = mirrored_pressset
+        #         self.press_events = mirrored_events
+        #         # 重新生成 press_times（按时间排序）
+        #         self.press_times = [t for _, t in sorted(self.press_events, key=lambda x: x[1])]
+        #         logger.debug(f"应用 Mirror 模组：轨道 {list(range(column_count))} 镜像为 {list(range(column_count-1, -1, -1))}")
+
     def get_data(self):
         return {
             "status": self.status,
             "player_name": self.player_name,
             "mod": self.mod,
+            "corrector": getattr(self, 'corrector', 1.0),
             "mods": self.mods,
             "score": self.score,
             "accuracy": self.acc,

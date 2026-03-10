@@ -53,22 +53,10 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
     n50 = osr_obj.judge["50"]
     misses = osr_obj.judge["0"]
 
-    # 获取用于显示的 mod 字符串和用于计算的整数
+    # 获取用于显示的 mod 字符串和 corrector（parser 中已统一缩放时间数据）
     mods_list = osr_obj.mods if hasattr(osr_obj, 'mods') else []
     mod_str = str(mod_obj)
-    if hasattr(mod_obj, 'value'):
-        mod_int = mod_obj.value
-    else:
-        mod_int = int(mod_obj) if isinstance(mod_obj, (int, np.integer)) else 0
-
-    # 计算速度修正系数
-    corrector = 1
-    if mod_int != 0:
-        mod_bin = bin(mod_int)[2:].zfill(32)
-        if mod_bin[-7] == '1':
-            corrector = 2/3
-        elif mod_bin[-9] == '1':
-            corrector = 4/3
+    corrector = getattr(osr_obj, 'corrector', 1.0)
 
     # 构建绘图数据
     basetime = []
@@ -79,7 +67,7 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
             if not valid_presses:
                 continue
             maxpress = max(valid_presses)
-            t = np.linspace(0, maxpress, maxpress + 1) * corrector
+            t = np.linspace(0, maxpress, maxpress + 1)
             count = np.zeros(maxpress + 1)
             for d in valid_presses:
                 count[d] += 1
@@ -338,20 +326,21 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
     sample_rate = data["sample_rate"]
     mods_list = data.get("mods", [])  # 获取模组列表
     
-    # 获取用于计算的 mod 整数值
-    if hasattr(mod_obj, 'value'):
-        mod_int = mod_obj.value
-    else:
-        mod_int = int(mod_obj) if isinstance(mod_obj, (int, np.integer)) else 0
-
-    # 计算速度修正系数（用于按压分布图）
-    corrector = 1
-    if mod_int != 0:
-        mod_bin = bin(mod_int)[2:].zfill(32)
-        if len(mod_bin) >= 7 and mod_bin[-7] == '1':
-            corrector = 2/3
-        elif len(mod_bin) >= 9 and mod_bin[-9] == '1':
-            corrector = 4/3
+    # 统计信息：分数、准确率、ratio 以及各判定计数
+    score = data.get("score", 0)
+    accuracy = data.get("accuracy", 0)
+    ratio = data.get("ratio", 0)
+    judge = data.get("judge", {})
+    gekis = judge.get("320", 0)
+    n300 = judge.get("300", 0)
+    katus = judge.get("200", 0)
+    n100 = judge.get("100", 0)
+    n50 = judge.get("50", 0)
+    misses = judge.get("0", 0)
+    presscount = f'320={gekis}, 300={n300}\n200={katus}, 100={n100}\n50={n50}, 0={misses}'
+    
+    # 使用 parser 中提供的 corrector（parser 已对时间数据做了统一缩放）
+    corrector = data.get("corrector", 1.0)
 
     # 构建按压分布图数据
     basetime = []
@@ -363,7 +352,7 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
             if not valid_presses:
                 continue
             maxpress = max(valid_presses)
-            t = np.linspace(0, maxpress, maxpress + 1) * corrector
+            t = np.linspace(0, maxpress, maxpress + 1)
             count = np.zeros(maxpress + 1)
             for d in valid_presses:
                 count[d] += 1
@@ -406,6 +395,14 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         # 在按压分布图中添加RI信息
         ax1.text(0.02, 0.98, f'RI={corrector:.2f}', transform=ax1.transAxes, 
                 fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        # 添加分数、准确率、ratio 信息
+        stats_text = f"Score={score}\nAcc={accuracy:.2f}%\nRatio={ratio:.2f}"
+        ax1.text(0.02, 0.90, stats_text, transform=ax1.transAxes,
+                 fontsize=9, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        # 添加判定统计在右下
+        ax1.text(0.98, 0.02, presscount, transform=ax1.transAxes,
+                 fontsize=9, verticalalignment='bottom', horizontalalignment='right',
+                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
         # 右上：频谱图
         ax2.plot(xf, amp, color='darkgreen', linewidth=1)
@@ -492,6 +489,14 @@ def plot_comprehensive(output_dir: str, osr_obj: osr_file, osu_obj: osu_file = N
         # 在按压分布图中添加RI信息
         ax1.text(0.02, 0.98, f'RI={corrector:.2f}', transform=ax1.transAxes, 
                 fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        # 添加分数、准确率、ratio 信息
+        stats_text = f"Score={score}\nAcc={accuracy:.2f}%\nRatio={ratio:.2f}"
+        ax1.text(0.02, 0.90, stats_text, transform=ax1.transAxes,
+                 fontsize=9, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        # 添加判定统计在右下
+        ax1.text(0.98, 0.02, presscount, transform=ax1.transAxes,
+                 fontsize=9, verticalalignment='bottom', horizontalalignment='right',
+                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
         # 右：频谱
         ax2.plot(xf, amp, color='darkgreen', linewidth=1)

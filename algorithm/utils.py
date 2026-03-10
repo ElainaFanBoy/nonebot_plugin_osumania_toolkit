@@ -20,10 +20,21 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
         return [], []
     min_note = min(all_notes)
     max_note = max(all_notes)
-    buffer = 5000  # 允许5秒的缓冲
+    buffer = 5000
+
+    # 获取原始按下事件
+    press_events_raw = osr.press_events_raw
+
+    # 检查是否启用 Mirror 模组 (MR)
+    mirror = (osr.mod & 1073741824) != 0
+    if mirror:
+        total_cols = osu.column_count
+        # 将物理列映射到谱面列
+        press_events = [(total_cols - 1 - col, t) for col, t in press_events_raw]
+    else:
+        press_events = press_events_raw
 
     # 按列整理按下事件，并过滤超出时间范围的事件
-    press_events = osr.press_events
     press_by_col = {}
     for col, t in press_events:
         if min_note - buffer <= t <= max_note + buffer:
@@ -34,9 +45,7 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
 
     delta_list = []
     matched_pairs = []
-    max_diff = 188 - 3 * osu.od  # 最大允许偏差
-
-    import bisect
+    max_diff = 188 - 3 * osu.od  # 判定窗口，单位 ms
 
     for col in note_times_by_col:
         notes = note_times_by_col[col]
@@ -45,7 +54,6 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
             continue
         used = [False] * len(presses)
         for note in notes:
-            # 二分查找插入点
             idx = bisect.bisect_left(presses, note)
             best = None
             best_dist = None
@@ -57,7 +65,7 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
                     if dist <= max_diff:
                         best = i
                         best_dist = dist
-                    break  # 找到第一个可用的即停止，因为更远的距离只会更大
+                    break
                 i -= 1
             # 向右搜索
             i = idx
@@ -68,9 +76,8 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
                         if best is None or dist < best_dist:
                             best = i
                             best_dist = dist
-                    break  # 同样，找到第一个可用的即停止
+                    break
                 i += 1
-            # 如果找到了可用事件
             if best is not None:
                 used[best] = True
                 delta_list.append((col, presses[best] - note))
@@ -78,8 +85,6 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
     logger.debug(f"匹配到的点数量: {len(delta_list)}")
     logger.debug(f"匹配到的最后物件时间: {max(note for _, note, _ in matched_pairs) if matched_pairs else 0} ms")
     return delta_list, matched_pairs
-    # logger.debug(f"匹配到的点数量: {len(delta_list)}")
-    # logger.debug(f"匹配到的最后物件时间: {max(note for _, note, _ in matched_pairs) if matched_pairs else 0} ms")
 
 def parse_cmd(cmd_text: str):
     # 辅助变量

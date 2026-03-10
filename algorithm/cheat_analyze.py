@@ -263,7 +263,7 @@ def analyze_pulse_spectrum(data: dict) -> dict:
     if not press_times or not intervals:
         return {
             "cheat": False,
-            "suspicious": False,
+            "sus": False,
             "reason": "频谱分析失败，无有效按键事件"
         }
 
@@ -280,7 +280,7 @@ def analyze_pulse_spectrum(data: dict) -> dict:
     if total_duration <= 0:
         return {
             "cheat": False,
-            "suspicious": False,
+            "sus": False,
             "reason": "频谱分析失败，无效时长"
         }
 
@@ -304,7 +304,7 @@ def analyze_pulse_spectrum(data: dict) -> dict:
     if len(search_amp) == 0:
         return {
             "cheat": False,
-            "suspicious": False,
+            "sus": False,
             "reason": "频谱分析失败，无有效频率"
         }
 
@@ -335,8 +335,10 @@ def analyze_pulse_spectrum(data: dict) -> dict:
             cheat = False
         else:
             if peak_hz < 30:
-                pass
-            elif peak_hz > 30 and peak_hz < 50:
+                reason = f"脉冲序列分析：主峰 {peak_hz:.1f} Hz (信噪比={snr:.1f})，低频峰，正常。"
+                sus = False
+                cheat = False
+            elif peak_hz >= 30 and peak_hz < 50:
                 reason = f"脉冲序列分析：主峰 {peak_hz:.1f} Hz (信噪比={snr:.1f})，标记为可疑。"
                 sus = True
                 cheat = False
