@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..file.file import download_file_by_id
 from ..file.osu_file_parser import osu_file
-from ..algorithm.rework import get_result_text, get_rework_result, parse_osu_filename
+from ..algorithm.rework import get_result_text, get_rework_result, parse_osu_filename, process_zip_file
 from ..algorithm.utils import parse_cmd, is_mc_file
 from ..algorithm.convert import convert_mc_to_osu
 
@@ -47,12 +47,11 @@ async def handle_rework(event: MessageEvent):
         if not file_ident:
             await rework.finish("文件信息不完整。")
         file_name = os.path.basename(file_ident)
-        if not (file_name.lower().endswith(".osu") or file_name.lower().endswith(".mc")):
-            await rework.finish("请回复 .osu 或 .mc 格式的谱面文件。")
+        if not (file_name.lower().endswith(".osu") or file_name.lower().endswith(".mc") or 
+                file_name.lower().endswith(".osz") or file_name.lower().endswith(".mcz")):
+            await rework.finish("请回复 .osu/.mc 格式的谱面文件。")
         if not file_url:
             await rework.finish("无法获取文件下载链接。")
-
-        await rework.send(f"已收到文件：{file_name}，请稍候...")
 
         tmp_file = CACHE_DIR / file_name
 
@@ -68,29 +67,44 @@ async def handle_rework(event: MessageEvent):
         except Exception as e:
             await rework.finish(f"下载异常：{e}")
 
-        # 检查是否为 .mc 文件，如果是则转换为 .osu
-        chart_file = tmp_file
-        mc_file = is_mc_file(chart_file)
-        if mc_file:
-            try:
-                # 转换为 .osu 文件
-                osu_file_path = convert_mc_to_osu(str(tmp_file), str(CACHE_DIR))
-                chart_file = Path(osu_file_path)
-                file_name = os.path.basename(osu_file_path)
-            except Exception as e:
-                await rework.finish(f".mc 文件转换失败: {e}")
-
-
+        # 检查文件类型并处理
         try:
-            # 计算星数
-            sr, LN_ratio, column_count = await get_rework_result(str(chart_file), speed_rate, od_flag, cvt_flag)
-            meta_data = parse_osu_filename(file_name)
-            if not meta_data:
-                osu_obj = osu_file(chart_file)
-                osu_obj.process()
-                meta_data = osu_obj.meta_data
-            await rework.send(get_result_text(meta_data, mod_display, sr, speed_rate, od_flag, LN_ratio, column_count), to_sender=True)
-            
+            if file_name.lower().endswith(('.osz', '.mcz')):
+                # 处理压缩包文件
+                await rework.send(f"已收到图包：{file_name}，请耐心等待，请勿重复发送命令。")
+                results = await process_zip_file(CACHE_DIR, tmp_file, speed_rate, od_flag, cvt_flag, mod_display)
+                
+                # 发送结果（分批发送，避免消息过长）
+                batch_size = 5  # 每批发送5个结果
+                for i in range(0, len(results), batch_size):
+                    batch = results[i:i + batch_size]
+                    batch_text = "\n\n".join(batch)
+                    await rework.send(f"结果（{i//batch_size + 1}/{len(results)//batch_size + 1}）:\n{batch_text}")
+                    
+            else:
+                # 处理单个谱面文件
+                await rework.send(f"已收到文件：{file_name}，请稍候...")
+                
+                chart_file = tmp_file
+                
+                # 检查是否为 .mc 文件，如果是则转换为 .osu
+                if is_mc_file(str(chart_file)):
+                    try:
+                        osu_file_path = convert_mc_to_osu(str(tmp_file), str(CACHE_DIR))
+                        chart_file = Path(osu_file_path)
+                        file_name = os.path.basename(osu_file_path)
+                    except Exception as e:
+                        await rework.finish(f".mc 文件转换失败: {e}")
+
+                # 计算星数
+                sr, LN_ratio, column_count = await get_rework_result(str(chart_file), speed_rate, od_flag, cvt_flag)
+                meta_data = parse_osu_filename(file_name)
+                if not meta_data:
+                    osu_obj = osu_file(chart_file)
+                    osu_obj.process()
+                    meta_data = osu_obj.meta_data
+                await rework.send(get_result_text(meta_data, mod_display, sr, speed_rate, od_flag, LN_ratio, column_count), to_sender=True)
+                
         except Exception as e:
             if str(e) == "ParseError":
                 await rework.send("谱面解析失败，可能是文件损坏或格式不兼容。")
@@ -99,10 +113,9 @@ async def handle_rework(event: MessageEvent):
             else:
                 await rework.send(f"计算失败：{e}")
         finally:
+            # 清理临时文件
             if tmp_file and tmp_file.exists():
                 tmp_file.unlink()
-            if chart_file != tmp_file and chart_file.exists():
-                chart_file.unlink()
         return
     
     elif bid is None:
@@ -123,4 +136,3 @@ async def handle_rework(event: MessageEvent):
         finally:
             if tmp_file and tmp_file.exists():
                 tmp_file.unlink()
-        
