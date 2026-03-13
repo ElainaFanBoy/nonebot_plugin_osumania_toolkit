@@ -150,7 +150,7 @@ class mr_file:
             self.timestamp = struct.unpack_from('<i', data, offset)[0]
             offset += 4
 
-            # 21. unknown_int
+            # 21. unknown_int 暂时未知作用
             if offset + 4 > len(data):
                 self.status = "ParseError"
                 return

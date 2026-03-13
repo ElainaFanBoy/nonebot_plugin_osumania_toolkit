@@ -187,7 +187,7 @@ class osr_file:
 
         # 在线成绩ID (8 bytes)
         if offset + 8 > len(data):
-            # 有些老版本没有？尝试读取，如果不够则忽略
+            # 有些老版本没有，尝试读取，如果不够则忽略
             self.replay_id = 0
         else:
             self.replay_id = struct.unpack('<q', data[offset:offset+8])[0]
@@ -284,9 +284,8 @@ class osr_file:
                 if onset[k] != 0 and l == 0:
                     # 键释放，记录按压时长（原始时间）
                     # 此处将按压时长存入 pressset_raw，稍后根据速度因子缩放
-                    # 为了方便，先暂存在临时字典，最后再统一处理
-                    pass  # 稍后统一处理按压时长，因为需要释放事件
-                    # 实际可在释放时直接存入，但需要知道原始时长
+                    # 暂存在临时字典，最后再统一处理
+                    pass
             onset = r_onset
 
         pressed_start = {}
@@ -320,7 +319,7 @@ class osr_file:
                 if onset[k] == 0 and l == 1:
                     press_times_raw.append(current_time_raw)
                     press_events_raw.append((k, current_time_raw))
-                    # 可选：记录按下起始时间（用于计算时长），但 timeset 已处理
+                    # 记录按下起始时间
 
             timeset += onset * w
             for k, l in enumerate(r_onset):
@@ -330,7 +329,7 @@ class osr_file:
                     timeset[k] = 0
             onset = r_onset
 
-        # 现在我们有原始数据
+        # 原始数据
         self.intervals_raw = intervals_raw
         self.press_events_raw = press_events_raw
         self.press_times_raw = press_times_raw
@@ -349,7 +348,7 @@ class osr_file:
                 speed_factor = 1.5
             elif mod_int & 256:   # HalfTime
                 speed_factor = 0.75
-        # corrector = 1/speed_factor，用于将原始时间转换为实时时间
+        # 将原始时间转换为实时时间
         corrector = 1.0 / speed_factor
 
         self.corrector = corrector
@@ -367,13 +366,11 @@ class osr_file:
         # 估算采样率（使用实时间隔）
         # 保留旧算法作为主要采样率估算方法
         if self.intervals:
-            # 改进的采样率估算算法
-            # 1. 过滤掉异常大的间隔（可能由于暂停、定位帧等）
+            # 过滤掉异常大的间隔（可能由于暂停、定位帧等）
             valid_intervals = [i for i in self.intervals if 0 < i <= 100]
             if not valid_intervals:
                 valid_intervals = self.intervals
-            
-            # 2. 使用众数和中位数结合的方法
+            # 使用众数和中位数结合的方法
             interval_counts = Counter(valid_intervals)
             if interval_counts:
                 # 获取前3个最常见的间隔
@@ -381,18 +378,14 @@ class osr_file:
                 # 计算加权平均间隔（权重为出现次数）
                 total_count = sum(count for _, count in common_intervals)
                 weighted_interval = sum(interval * count for interval, count in common_intervals) / total_count
-                
-                # 3. 同时计算中位数间隔
+                # 同时计算中位数间隔
                 sorted_intervals = sorted(valid_intervals)
                 median_interval = sorted_intervals[len(sorted_intervals) // 2]
-                
-                # 4. 取加权平均和中位数的较小值（更接近真实采样间隔）
+                # 取加权平均和中位数的较小值（更接近真实采样间隔）
                 avg_interval = min(weighted_interval, median_interval)
-                
-                # 5. 计算采样率（Hz）
+
                 self.sample_rate = 1000 / avg_interval
-                
-                # 6. 常见采样率取整（60Hz, 120Hz, 144Hz, 240Hz, 360Hz等）
+                # 常见采样率取整（60Hz, 120Hz, 144Hz, 240Hz, 360Hz等）
                 common_rates = [60, 120, 144, 240, 360, 480, 1000]
                 closest_rate = min(common_rates, key=lambda x: abs(x - self.sample_rate))
                 if abs(closest_rate - self.sample_rate) < 5:  # 允许5Hz误差
@@ -416,7 +409,7 @@ class osr_file:
         else:
             self.fft_analysis_result = None
 
-        # 过滤无效轨道（使用原始数据判断？用 pressset_raw 或 pressset 均可）
+        # 过滤无效轨道
         valid_pressset = [p for p in self.pressset if len(p) > 5]
         if len(valid_pressset) < 2:
             self.status = "tooFewKeys"

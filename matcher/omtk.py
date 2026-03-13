@@ -16,7 +16,7 @@ command_aliases = {
 
 # help_text 结构: (命令, 命令名称, 页码, 总页码, 帮助文本)
 help_text = [("rework", "星数重算", "1", "2",
-              "你可以回复包含 .osu 文件的消息，或使用 bid 指定谱面。\n命令格式：/rework b<bid> +[mods] x[speed] OD[OD] gap:[gap] \n示例：/rework b4094064 +EZHO x1.25\n/rework b4094064 +IN OD8 gap:50\n注意：如果你回复了一个包含 .osu 文件的消息，你可以不填写bid参数，命令将忽略bid。\n注意部分模组和参数冲突。"),
+              "你可以回复包含 .osu/.mr 文件的消息，或回复包含 .osz/.mcz 的消息，或使用 bid 指定谱面。\n命令格式：/rework b<bid> +[mods] x[speed] OD[OD] gap:[gap] \n示例：/rework b4094064 +EZHO x1.25\n/rework b4094064 +IN OD8 gap:50\n警告：图包分析开销较大，请勿滥用。结果将发送大量文字，谨防刷屏。\n注意：1. 如果你回复了一个包含谱面/图包文件的消息，命令将忽略bid。\n2. 部分模组和参数冲突。"),
              
              ("rework", "星数重算", "2", "2",
               "/rework参数说明：\n- bid: 以 b 开头，后跟整数，从官网获取谱面。\n- mods: 以 + 开头，后跟模组名缩写（支持 HR/EZ、DT/HT、IN/HO、DC/NC）。不区分大小写，格式如雨沐。\n- speed: 以 x 或 * 开头，后跟倍速数值（如 x1.5）。倍速必须在 0.25 到 3.0 之间。\n- OD: 以 OD 开头, OD值必须在 -15 到 15 之间。\n- gap: 反键面缝参数，以 gap: 开头，后跟整数，单位ms, 默认150， 仅在 IN 模组启用时有效。"),
@@ -70,8 +70,10 @@ async def handle_omtk(event: MessageEvent):
                 await omtk.finish("请检查命令格式后重试。")
                 
     except ValueError:
-        await omtk.finish("请检查命令格式后重试。")
+        await omtk.send("请检查命令格式后重试。")
+        return
     except FinishedException:
         pass
     except Exception as e:
-        await omtk.finish(f"发生错误: {str(e)}")
+        await omtk.send(f"发生错误: {str(e)}")
+        return

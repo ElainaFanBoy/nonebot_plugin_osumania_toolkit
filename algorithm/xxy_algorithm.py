@@ -1,3 +1,7 @@
+'''
+该文件来源于 https://github.com/sunnyxxy/Star-Rating-Rebirth/blob/main/algorithm.py
+为适配功能做了一些改动。
+'''
 from ..file.osu_file_parser import *
 from collections import defaultdict
 import numpy as np
