@@ -75,10 +75,11 @@ async def handle_rework(bot: Bot, event: MessageEvent):
                 
                 # 发送结果（分批发送，避免消息过长）
                 batch_size = 5  # 每批发送5个结果
+                total_batches = (len(results) + batch_size - 1) // batch_size  # 计算总批次数
                 for i in range(0, len(results), batch_size):
                     batch = results[i:i + batch_size]
                     batch_text = "\n\n".join(batch)
-                    await rework.send(f"结果（{i//batch_size + 1}/{len(results)//batch_size + 1}）:\n{batch_text}")
+                    await rework.send(f"结果（{i//batch_size + 1}/{total_batches}）:\n{batch_text}")
                     
             else:
                 # 处理单个谱面文件
@@ -131,7 +132,10 @@ async def handle_rework(bot: Bot, event: MessageEvent):
         except FinishedException:
             pass
         except Exception as e:
-            await rework.send(f"{e}")
+            if "max() iterable argument is empty" in str(e):
+                await rework.send(f"错误: 未找到谱面 b{bid}，请检查bid是否正确")
+            else:
+                await rework.send(f"错误: {e}")
         finally:
             if tmp_file and tmp_file.exists():
                 tmp_file.unlink()

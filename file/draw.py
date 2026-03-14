@@ -66,7 +66,7 @@ def plot_pressingtime(osr_obj: osr_file, output_dir: str) -> str:
         生成的图片路径
     """
     pressset = osr_obj.pressset
-    mod_obj = osr_obj.mod          # 可能是 Mod 对象或整数
+    mod_obj = getattr(osr_obj, 'mod', 0)          # 使用getattr避免AttributeError
     player_name = osr_obj.player_name
     timestamp = osr_obj.timestamp
     file_basename = os.path.basename(osr_obj.file_path).replace('.osr', '')

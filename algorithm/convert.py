@@ -77,7 +77,7 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
             soundnote = n
             break
 
-    # 计算 BPM 和偏移
+    # 计算 BPM 和偏移（完全照搬 ref.py 的累积算法）
     bpm = [line[0]['bpm']]
     bpmoffset = [-soundnote.get('offset', 0)]  # 初始偏移
 
@@ -166,27 +166,20 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
         lines.append(f'{int(bpmoffset[i])},{60000 / bpm[i]},{meter},1,0,0,1,0')
 
     # 绿色 Timing Points（SV 点）
-    if effect:
-        for sv in effect:
-            sv_beat = beat(sv['beat'])
-            # 找到所属 BPM 段
-            j = 0
-            for b in line:
-                if beat(b['beat']) > sv_beat:
-                    j += 1
-                else:
-                    continue
-            j = bpmcount - j - 1
-            
-            # 计算 SV 点时间
-            sv_time = ms(beat(sv['beat']) - beat(line[j]['beat']), bpm[j], bpmoffset[j])
-            
-            # 检查条件
-            if int(sv_time) >= bpmoffset[0]:
-                scroll = sv.get('scroll', 1.0)
-                sv_value = "1E+308" if scroll == 0 else 100 / abs(scroll)
-                meter = line[j].get('sign', 4)
-                lines.append(f'{int(sv_time)},-{sv_value},{meter},1,0,0,0,0')
+    for sv in effect:
+        sv_beat = beat(sv['beat'])
+        # 找到所属 BPM 段（最后一个节拍 ≤ sv_beat 的段）
+        idx = 0
+        for i, b in enumerate(line):
+            if beat(b['beat']) > sv_beat:
+                break
+            idx = i
+        delta_beat = sv_beat - beat(line[idx]['beat'])
+        sv_time = ms(delta_beat, bpm[idx], bpmoffset[idx])
+        scroll = sv.get('scroll', 1.0)
+        sv_value = "1E+308" if scroll == 0 else 100 / abs(scroll)
+        meter = line[idx].get('sign', 4)
+        lines.append(f'{int(sv_time)},-{sv_value},{meter},1,0,0,0,0')
 
     lines.append('')
     lines.append('[HitObjects]')
@@ -195,52 +188,40 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
     for n in note:
         if n.get('type', 0) != 0:
             continue  # 跳过音效
-        j = 0
-        k = 0
-        
-        for b in line:
-            if beat(b['beat']) > beat(n['beat']):
-                j += 1
-            else:
-                continue
 
+        n_beat = beat(n['beat'])
+        # 找到所属 BPM 段
+        idx = 0
+        for i, b in enumerate(line):
+            if beat(b['beat']) > n_beat:
+                break
+            idx = i
+        delta_beat = n_beat - beat(line[idx]['beat'])
+        n_time = ms(delta_beat, bpm[idx], bpmoffset[idx])
+        x = col(n['column'], keys)
+
+        # 长按或普通
         if 'endbeat' in n:
-            for b in line:
-                if beat(b['beat']) > beat(n['endbeat']):
-                    k += 1
-                else:
-                    continue
+            end_beat = beat(n['endbeat'])
+            idx_end = 0
+            for i, b in enumerate(line):
+                if beat(b['beat']) > end_beat:
+                    break
+                idx_end = i
+            delta_end = end_beat - beat(line[idx_end]['beat'])
+            end_time = ms(delta_end, bpm[idx_end], bpmoffset[idx_end])
+            type_str = '128'
+            extra = f',0,{int(end_time)}:0:0:0:'
+        else:
+            type_str = '1'
+            extra = ',0,0:0:0:'
 
-        j = bpmcount - j - 1
-        k = bpmcount - k - 1 if 'endbeat' in n else j
+        vol = n.get('vol', 100)
+        sound = n.get('sound', 0)
+        extra += f'{vol}:{sound}'
 
-        # 计算音符时间
-        n_time = ms(beat(n['beat']) - beat(line[j]['beat']), bpm[j], bpmoffset[j])
-        
-        # ref.py 的检查条件
-        if int(n_time) >= 0:
-            x = col(n['column'], keys)
-            
-            # 构建音符行
-            line_str = f'{x},192,{int(n_time)}'
-            
-            if 'endbeat' not in n:  # 普通音符
-                line_str += ',1,0,0:0:0:'
-            else:  # 长按音符
-                end_time = ms(beat(n['endbeat']) - beat(line[k]['beat']), bpm[k], bpmoffset[k])
-                line_str += f',128,0,{int(end_time)}:0:0:0:'
-            
-            # 音效处理
-            vol = n.get('vol', 100)
-            sound = n.get('sound', 0)
-            if sound == 0:
-                line_str += '0:'
-            else:
-                # 处理音效字符串
-                sound_str = str(sound).replace('"', '')
-                line_str += f'{vol}:{sound_str}'
-            
-            lines.append(line_str)
+        line_str = f'{x},192,{int(n_time)},{type_str},0,0,{extra}'
+        lines.append(line_str)
 
     # 写入文件
     try:
@@ -259,11 +240,25 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
 
     # 创建一个 osr_file 实例，跳过实际文件解析
     osr = osr_file.__new__(osr_file)
+    osr._init_derived_attrs()
     # 设置基本属性
     osr.file_path = mr_obj.file_path
     osr.status = mr_obj.status  # 可能为 "OK" 或 "ParseError"
     osr.player_name = "ConvertedFromMalody"
     osr.mod, osr.mods = malody_mods_to_osu_mods(mr_obj.mods_flags)
+    
+    # 计算速度因子（用于时间缩放）
+    # Malody 速度模组：Dash=1.2x, Slow=0.8x, Rush=1.5x
+    # 注意：时间戳已经应用了速度模组，所以我们需要逆缩放
+    speed_factor = 1.0
+    if mr_obj.mods_flags & (1 << 4):   # Dash (bit 5)
+        speed_factor *= 1.2
+    if mr_obj.mods_flags & (1 << 8):   # Slow (bit 9)
+        speed_factor *= 0.8
+    if mr_obj.mods_flags & (1 << 5):   # Rush (bit 6) - 对应 DoubleTime
+        speed_factor *= 1.5
+    osr.speed_factor = speed_factor
+    osr.corrector = 1.0 / speed_factor if speed_factor != 0 else 1.0
 
     # 判定映射：best->320, cool->200, good->100, miss->0
     osr.judge = {
@@ -292,8 +287,11 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
     # 以下属性从动作序列生成
     osr.pressset = [[] for _ in range(18)]
     osr.intervals = []
+    osr.intervals_raw = []
     osr.press_times = []
+    osr.press_times_raw = []
     osr.press_events = []
+    osr.press_events_raw = []
     osr.play_data = []
 
     # 按时间排序动作
@@ -304,52 +302,67 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
 
     # 记录当前每列的按键状态 (True/False)
     current_state = [False] * 18
-    # 记录每列按下开始时间
-    pressed_start = [None] * 18
+    # 记录每列按下开始时间（原始时间）
+    pressed_start_raw = [None] * 18
+    # 记录每列按下开始时间（逆缩放时间）
+    pressed_start_scaled = [None] * 18
     # 上一个事件的时间（用于计算 time_delta）
-    prev_time = None
+    prev_time_raw = None
+    prev_time_scaled = None
     # 当前累积时间（用于绝对时间）
-    for time, action, col in actions:
+    for time_raw, action, col in actions:
         if col >= 18:
             continue  # 忽略超出轨道
+        
+        # 计算逆缩放时间（用于与谱面匹配）
+        time_scaled = int(time_raw / speed_factor) if speed_factor != 0 else time_raw
+        
         # 根据 action 更新状态
         if action == 1:  # 按下
             if not current_state[col]:
                 current_state[col] = True
-                pressed_start[col] = time
-                # 记录按下事件
-                osr.press_times.append(time)
-                osr.press_events.append((col, time))
+                pressed_start_raw[col] = time_raw
+                pressed_start_scaled[col] = time_scaled
+                # 记录按下事件（使用逆缩放时间，用于与谱面匹配）
+                osr.press_times.append(time_scaled)
+                osr.press_events.append((col, time_scaled))
+                # 同时保存原始时间
+                osr.press_times_raw.append(time_raw)
+                osr.press_events_raw.append((col, time_raw))
         elif action == 2:  # 释放
             if current_state[col]:
                 current_state[col] = False
-                if pressed_start[col] is not None:
-                    duration = time - pressed_start[col]
-                    if duration >= 0:
-                        osr.pressset[col].append(int(duration))
-                    pressed_start[col] = None
+                if pressed_start_raw[col] is not None:
+                    duration_raw = time_raw - pressed_start_raw[col]
+                    duration_scaled = time_scaled - pressed_start_scaled[col]
+                    if duration_raw >= 0:
+                        osr.pressset[col].append(int(duration_raw))
+                    pressed_start_raw[col] = None
+                    pressed_start_scaled[col] = None
         # 构建当前时刻的按键掩码
         keys_mask = 0
         for c in range(18):
             if current_state[c]:
                 keys_mask |= (1 << c)
 
-        # 生成 play_data 事件：需要相对时间差
-        if prev_time is None:
-            delta = time  
-            # 按照 osr ，第一个事件的时间差可能是第一个时间点，但通常为 0 或正数。
-            # osu! 回放第一个事件的时间差是从 0 到第一个事件的时间，所以 delta = time - 0 = time
-            # 为了与 osr_file 兼容，直接使用 time 作为 delta（假设起始时间为 0）
+        # 生成 play_data 事件：需要相对时间差（使用原始时间）
+        if prev_time_raw is None:
+            delta_raw = time_raw
+            delta_scaled = time_scaled
         else:
-            delta = time - prev_time
-        if delta < 0:
-            delta = 0
-        # 创建事件对象
-        event = ReplayEvent(delta, keys_mask)
+            delta_raw = time_raw - prev_time_raw
+            delta_scaled = time_scaled - prev_time_scaled
+        if delta_raw < 0:
+            delta_raw = 0
+        if delta_scaled < 0:
+            delta_scaled = 0
+        # 创建事件对象（使用原始时间差，保持内部一致性）
+        event = ReplayEvent(delta_raw, keys_mask)
         osr.play_data.append(event)
-        osr.intervals.append(delta)
-        prev_time = time
-        osr.press_events_raw = osr.press_events
+        osr.intervals.append(delta_raw)
+        osr.intervals_raw.append(delta_raw)
+        prev_time_raw = time_raw
+        prev_time_scaled = time_scaled
 
     # 计算采样率
     if osr.intervals:

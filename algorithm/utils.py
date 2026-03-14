@@ -1,6 +1,7 @@
 import bisect
 import json
 import os
+import sys
 
 from nonebot.log import logger
 
@@ -26,17 +27,18 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
     max_note = max(all_notes)
     buffer = 5000
 
-    # 获取原始按下事件
-    press_events_raw = osr.press_events_raw
+    # 获取按下事件（使用已缩放的时间，用于匹配谱面）
+    # 对于普通.osr文件：press_events是实时时间（已应用速度模组）
+    # 对于.mr转换的osr文件：press_events是逆缩放时间（用于匹配原始谱面时间）
+    press_events = osr.press_events
 
     # 检查是否启用 Mirror 模组 (MR)
-    mirror = (osr.mod & 1073741824) != 0
+    mod_value = getattr(osr, 'mod', 0)
+    mirror = (mod_value & 1073741824) != 0
     if mirror:
         total_cols = osu.column_count
         # 将物理列映射到谱面列
-        press_events = [(total_cols - 1 - col, t) for col, t in press_events_raw]
-    else:
-        press_events = press_events_raw
+        press_events = [(total_cols - 1 - col, t) for col, t in press_events]
 
     # 按列整理按下事件，并过滤超出时间范围的事件
     press_by_col = {}
@@ -276,28 +278,58 @@ def is_mc_file(file_path: str) -> bool:
     except:
         return False
     
-def malody_mods_to_osu_mods(malody_flags: int) -> int:
+def malody_mods_to_osu_mods(malody_flags: int) -> tuple:
     """
-    将 Malody 的 mods_flags 转换为 osu! 的 mod 整数值。
+    将 Malody 的 mods_flags 转换为 osu! 的 mod 整数值和mod列表。
+    
     映射规则：
-        bit 2: Luck  -> Random (2097152)
-        bit 3: Flip  -> Mirror (1073741824)
-        bit 6: Rush  -> DoubleTime (64)  (可额外加上 Nightcore? 但 Malody 无区分，只加 DT)
-        bit 7: Hide  -> Hidden (8)
-    其他位忽略。
+    - bit 1: Fair -> 忽略
+    - bit 2: Luck -> Random (2097152)
+    - bit 3: Flip -> Mirror (1073741824)
+    - bit 4: Const -> 忽略
+    - bit 5: Dash -> 忽略
+    - bit 6: Rush -> DoubleTime (64)
+    - bit 7: Hide -> Hidden (8)
+    - bit 9: Slow -> 忽略
+    - bit 10: Death -> 忽略
     """
     osu_mod = 0
     osu_mods = []
-    if malody_flags & (1 << 2):   # Luck
+    
+    if malody_flags & (1 << 1):   # Luck (bit 2)
         osu_mod |= 2097152
         osu_mods.append("Random")
-    if malody_flags & (1 << 3):   # Flip
+    
+    if malody_flags & (1 << 2):   # Flip (bit 3)
         osu_mod |= 1073741824
         osu_mods.append("Mirror")
-    if malody_flags & (1 << 6):   # Rush
+    
+    if malody_flags & (1 << 5):   # Rush (bit 6)
         osu_mod |= 64
         osu_mods.append("DoubleTime")
-    if malody_flags & (1 << 7):   # Hide
+    
+    if malody_flags & (1 << 6):   # Hide (bit 7)
         osu_mod |= 8
         osu_mods.append("Hidden")
+
+    
+    # 忽略的mods
+    ignored_mods = []
+    if malody_flags & (1 << 0):   # Fair (bit 1)
+        ignored_mods.append("Fair")
+    if malody_flags & (1 << 3):   # Const (bit 4)
+        ignored_mods.append("Const")
+    if malody_flags & (1 << 4):   # Dash (bit 5)
+        ignored_mods.append("Dash")
+    if malody_flags & (1 << 8):   # Slow (bit 9)
+        ignored_mods.append("Slow")
+    if malody_flags & (1 << 9):   # Death (bit 10)
+        ignored_mods.append("Death")
+    
+    if ignored_mods:
+        logger.debug(f"忽略的Malody mods: {', '.join(ignored_mods)}")
+    
+    if not osu_mods:
+        osu_mods.append("NoMod")
+        
     return osu_mod, osu_mods

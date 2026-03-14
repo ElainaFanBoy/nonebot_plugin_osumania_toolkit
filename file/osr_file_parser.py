@@ -96,6 +96,7 @@ class osr_file:
     def __init__(self, file_path):
         self.file_path = file_path
         self.status = "init"
+        self._init_derived_attrs()
 
         # 读取整个文件
         with open(file_path, 'rb') as f:
@@ -225,6 +226,39 @@ class osr_file:
         else:
             self.status = "ParseError" if self.status != "NotMania" else "NotMania"
 
+    def _init_derived_attrs(self):
+        """初始化所有派生数据属性为默认值，防止后续访问时属性不存在"""
+        self.pressset = [[] for _ in range(18)]
+        self.intervals = []
+        self.press_times = []
+        self.press_events = []
+        self.play_data = []
+        self.sample_rate = float('inf')
+        self.acc = 0.0
+        self.ratio = 0.0
+        self.judge = {"320": 0, "300": 0, "200": 0, "100": 0, "50": 0, "0": 0}
+        self.corrector = 1.0
+        self.speed_factor = 1.0
+        self.press_events_raw = []
+        self.press_times_raw = []
+        self.intervals_raw = []
+        self.pressset_raw = [[] for _ in range(18)]
+        self.fft_analysis_result = None
+        self.mod = 0
+        self.mods = ["None"]
+        self.score = 0
+        self.max_combo = 0
+        self.is_perfect_combo = False
+        self.timestamp = datetime.datetime.min
+        self.life_bar_graph = ""
+        self.game_mode = 3
+        self.game_version = 0
+        self.beatmap_hash = ""
+        self.replay_hash = ""
+        self.replay_id = 0
+        self.extra_mod_data = None
+        self.compressed_data = b""
+    
     def process(self):
         """解压LZMA数据并处理事件"""
         if self.status not in ["OK", "init"]:
