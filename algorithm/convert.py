@@ -77,7 +77,7 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
             soundnote = n
             break
 
-    # 计算 BPM 和偏移（完全照搬 ref.py 的累积算法）
+    # 计算 BPM 和偏移
     bpm = [line[0]['bpm']]
     bpmoffset = [-soundnote.get('offset', 0)]  # 初始偏移
 
@@ -166,20 +166,27 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
         lines.append(f'{int(bpmoffset[i])},{60000 / bpm[i]},{meter},1,0,0,1,0')
 
     # 绿色 Timing Points（SV 点）
-    for sv in effect:
-        sv_beat = beat(sv['beat'])
-        # 找到所属 BPM 段（最后一个节拍 ≤ sv_beat 的段）
-        idx = 0
-        for i, b in enumerate(line):
-            if beat(b['beat']) > sv_beat:
-                break
-            idx = i
-        delta_beat = sv_beat - beat(line[idx]['beat'])
-        sv_time = ms(delta_beat, bpm[idx], bpmoffset[idx])
-        scroll = sv.get('scroll', 1.0)
-        sv_value = "1E+308" if scroll == 0 else 100 / abs(scroll)
-        meter = line[idx].get('sign', 4)
-        lines.append(f'{int(sv_time)},-{sv_value},{meter},1,0,0,0,0')
+    if effect:
+        for sv in effect:
+            sv_beat = beat(sv['beat'])
+            # 找到所属 BPM 段
+            j = 0
+            for b in line:
+                if beat(b['beat']) > sv_beat:
+                    j += 1
+                else:
+                    continue
+            j = bpmcount - j - 1
+            
+            # 计算 SV 点时间
+            sv_time = ms(beat(sv['beat']) - beat(line[j]['beat']), bpm[j], bpmoffset[j])
+            
+            # 检查条件
+            if int(sv_time) >= bpmoffset[0]:
+                scroll = sv.get('scroll', 1.0)
+                sv_value = "1E+308" if scroll == 0 else 100 / abs(scroll)
+                meter = line[j].get('sign', 4)
+                lines.append(f'{int(sv_time)},-{sv_value},{meter},1,0,0,0,0')
 
     lines.append('')
     lines.append('[HitObjects]')
@@ -188,40 +195,52 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
     for n in note:
         if n.get('type', 0) != 0:
             continue  # 跳过音效
+        j = 0
+        k = 0
+        
+        for b in line:
+            if beat(b['beat']) > beat(n['beat']):
+                j += 1
+            else:
+                continue
 
-        n_beat = beat(n['beat'])
-        # 找到所属 BPM 段
-        idx = 0
-        for i, b in enumerate(line):
-            if beat(b['beat']) > n_beat:
-                break
-            idx = i
-        delta_beat = n_beat - beat(line[idx]['beat'])
-        n_time = ms(delta_beat, bpm[idx], bpmoffset[idx])
-        x = col(n['column'], keys)
-
-        # 长按或普通
         if 'endbeat' in n:
-            end_beat = beat(n['endbeat'])
-            idx_end = 0
-            for i, b in enumerate(line):
-                if beat(b['beat']) > end_beat:
-                    break
-                idx_end = i
-            delta_end = end_beat - beat(line[idx_end]['beat'])
-            end_time = ms(delta_end, bpm[idx_end], bpmoffset[idx_end])
-            type_str = '128'
-            extra = f',0,{int(end_time)}:0:0:0:'
-        else:
-            type_str = '1'
-            extra = ',0,0:0:0:'
+            for b in line:
+                if beat(b['beat']) > beat(n['endbeat']):
+                    k += 1
+                else:
+                    continue
 
-        vol = n.get('vol', 100)
-        sound = n.get('sound', 0)
-        extra += f'{vol}:{sound}'
+        j = bpmcount - j - 1
+        k = bpmcount - k - 1 if 'endbeat' in n else j
 
-        line_str = f'{x},192,{int(n_time)},{type_str},0,0,{extra}'
-        lines.append(line_str)
+        # 计算音符时间
+        n_time = ms(beat(n['beat']) - beat(line[j]['beat']), bpm[j], bpmoffset[j])
+        
+        # ref.py 的检查条件
+        if int(n_time) >= 0:
+            x = col(n['column'], keys)
+            
+            # 构建音符行
+            line_str = f'{x},192,{int(n_time)}'
+            
+            if 'endbeat' not in n:  # 普通音符
+                line_str += ',1,0,0:0:0:'
+            else:  # 长按音符
+                end_time = ms(beat(n['endbeat']) - beat(line[k]['beat']), bpm[k], bpmoffset[k])
+                line_str += f',128,0,{int(end_time)}:0:0:0:'
+            
+            # 音效处理
+            vol = n.get('vol', 100)
+            sound = n.get('sound', 0)
+            if sound == 0:
+                line_str += '0:'
+            else:
+                # 处理音效字符串
+                sound_str = str(sound).replace('"', '')
+                line_str += f'{vol}:{sound_str}'
+            
+            lines.append(line_str)
 
     # 写入文件
     try:
