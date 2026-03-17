@@ -288,17 +288,6 @@ def parse_acc_cmd(cmd_text: str) -> Tuple:
 
     return dan_name, acc_str, bid, num_songs, sv2_flag, reverse_flag, err_msg
 
-def get_available_dans():
-    """
-    获取所有可用的段位名
-    
-    返回:
-        list, 按字典序升序排列的段位名列表
-    """
-    data = list(dan_data.dan_notes.keys())
-    data.sort()
-    return data
-
 def validate_dan_name(dan_name: str, sv2_flag: bool = None):
     """
     验证段位名是否有效，并可选择性匹配 sv2_flag

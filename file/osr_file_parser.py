@@ -4,7 +4,7 @@ import datetime
 import numpy as np
 from collections import Counter
 from nonebot.log import logger
-from data import file_parser_data
+from ..file.data import file_parser_data
 
 MOD_MAPPING = file_parser_data.MOD_MAPPING
 

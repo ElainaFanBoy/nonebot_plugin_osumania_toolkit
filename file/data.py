@@ -1,4 +1,5 @@
-from ..algorithm.acc_calculate import get_available_dans
+import re
+
 
 # 辅助函数
 def format_dan_list(dans: list, items_per_line: int = 5) -> str:
@@ -18,6 +19,68 @@ def format_dan_list(dans: list, items_per_line: int = 5) -> str:
         formatted_lines.append(", ".join(line))
     return "\n".join(formatted_lines)
 
+
+def _get_dan_group_name(dan_name: str) -> str:
+    """根据段位命名规则返回分组名。"""
+    greek_names = {"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "spz"}
+
+    if dan_name.startswith("wds0_"):
+        return "wds0"
+    if dan_name.startswith("7kln"):
+        return "7kln"
+    if dan_name.startswith("7k"):
+        return "7k"
+    if dan_name.startswith("ln"):
+        return "ln"
+    if dan_name.startswith("senpaiex"):
+        return "senpaiex"
+    if dan_name.startswith("senpai"):
+        return "senpai"
+    if dan_name.startswith("spex"):
+        return "spex"
+    if re.match(r"^ex(?:\d+v\d(?:\.\d+)?|fv\d)$", dan_name):
+        return "ex"
+    if re.match(r"^\d+danv\d$", dan_name):
+        return "danv"
+    if re.match(r"^rf\d+$", dan_name) or dan_name in greek_names:
+        return "rf/reform"
+    if dan_name == "haku":
+        return "misc"
+    return "other"
+
+
+def format_dan_list_grouped(dans: list, items_per_line: int = 5) -> str:
+    """按前缀分组并格式化段位列表。"""
+    groups = {}
+    for dan in sorted(dans):
+        group_name = _get_dan_group_name(dan)
+        groups.setdefault(group_name, []).append(dan)
+
+    preferred_order = [
+        "danv",
+        "ex",
+        "spex",
+        "rf/reform",
+        "ln",
+        "7k",
+        "7kln",
+        "senpai",
+        "senpaiex",
+        "wds0",
+        "misc",
+        "other",
+    ]
+
+    ordered_group_names = [name for name in preferred_order if name in groups]
+    ordered_group_names.extend(sorted(name for name in groups if name not in preferred_order))
+
+    formatted_sections = []
+    for group_name in ordered_group_names:
+        formatted_sections.append(f"[{group_name}]")
+        formatted_sections.append(format_dan_list(groups[group_name], items_per_line))
+
+    return "\n\n".join(formatted_sections)
+
 # 所有数据
 
 # 帮助文本数据
@@ -35,7 +98,7 @@ class omtk_help_data:
             ("analyze", "作弊分析", "1", "2", 
             "*警告* 该命令开销较大，请勿滥用。\n-注意- 作弊分析由算法生成，仅供参考，仍处于早期实验阶段，如有问题请反馈。\n这是一个基于回放文件和谱面文件的作弊分析命令。你可以使用/analyze (/分析)回复包含 .osr/.mr 文件的消息来分析回放。如果同时指定bid，将分析delta_t，否则将执行无谱面分析，或发送 .osu/.mc 谱面文件继续分析。\n命令格式：/analyze [b<bid>]\n示例：/analyze b4094064"),
             
-        ("analyze", "作弊分析", "2", "2",
+            ("analyze", "作弊分析", "2", "2",
             "分析结果图片说明：\n当提供谱面时，将生成四格图：\n1. 按压时长分布图（左上）：显示每个轨道的按压时长分布，横轴为按压时长（ms），纵轴为计数。不同轨道用不同颜色表示。正常玩家各轨道分布相似，作弊可能显示异常高峰或分布差异过大。\n2. 脉冲序列频谱图（右上）：将整个回放的按键事件作为脉冲序列进行傅里叶变换，显示其频谱。横轴为频率（Hz），纵轴为幅度。可用于检测周期性按键模式（如连点器）。\n3. delta_t 直方图（左下）：显示玩家按键时间与谱面物件时间的偏差（delta_t）分布。横轴为delta_t（ms），纵轴为计数。正常分布应接近正态分布，作弊可能显示极窄分布或异常峰值。\n4. delta_t 散点图（右下）：以谱面物件时间为横轴，delta_t为纵轴绘制散点图，可观察偏差随时间的变化。正常应随机分布在0附近，作弊可能显示规律模式或固定偏差。\n\n当不提供谱面时，只生成前两个图表（按压时长分布图和脉冲序列频谱图）。"),
             
             ("delta", "判定偏差", "1", "1", 
@@ -57,7 +120,7 @@ class omtk_help_data:
             "可用段位列表(*替换为具体的数字，$替换为版本号):\n 1. Malody 4K Dan: 使用 *danv$ 或 ex*v$\n 2. Malody 4K Extra Dan v2 (Sample): 使用 spex*\n 3. osu!mania 4K Dan ~ REFORM (DDMythical): 使用 rf* 或 希腊字母(如alpha)\n备注: zeta和eta默认为Thaumiel，spz为Emik，额外支持haku(白段)\n 4. osu!mania 4K LN Dan Courses v2: 使用 ln* \n 5. wds0 Dan: 使用 wds0_* ,其中*还可以是j,n,f\n 6. Senpai Dan v1: 使用 senpai* 或 senpaiex* \n 7. osu!mania 7K Regular Dan Course: 使用 7k*dan 或 7k*, 其中后者包含s,g,z,a \n 8. osu!mania 7K LN Dan Course: 使用 7kln*, 其中*还可以是s,g,z,a \n\n查看全部内置段位详情请发送: /omtk acc 3"),
             
             ("acc", "单曲ACC计算", "3", "3",
-            "全部内置段位列表:\n" + format_dan_list(get_available_dans()))
+            "全部内置段位列表:\n(正在加载...)")
             ]
     command_aliases = {
         "按压": "pressingtime",
@@ -601,3 +664,16 @@ class sr_intervals_data:
         (10.3808, 10.4624, 'regular stellium mid/high'), 
         (10.4624, 10.544, 'regular stellium high')
     ]
+    
+
+def _refresh_acc_help_page() -> None:
+    """使用本地段位数据刷新 /omtk acc 第3页，避免循环导入。"""
+    dan_list_text = "全部内置段位列表:\n" + format_dan_list_grouped(sorted(dan_data.dan_notes.keys()))
+    for index, item in enumerate(omtk_help_data.help_text):
+        cmd, cmd_name, page, total_pages, _ = item
+        if cmd == "acc" and page == "3" and total_pages == "3":
+            omtk_help_data.help_text[index] = (cmd, cmd_name, page, total_pages, dan_list_text)
+            break
+
+
+_refresh_acc_help_page()
