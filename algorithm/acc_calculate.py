@@ -207,13 +207,14 @@ def extract_note_counts_from_dan(entry: List, sv2_flag: bool = False) -> Tuple:
 
 # ==================== 计算函数 ====================
 
-def calculate_acc(note_counts: List, acc_str: str) -> Tuple:
+def calculate_acc(note_counts: List, acc_str: str, sv2_flag: bool = False) -> Tuple:
     """
     使用自定义物量计算单曲ACC
     
     参数:
         note_counts: 物量列表
         acc_str: ACC字符串 (格式: acc1-acc2-acc3-acc4)
+        sv2_flag: 兼容参数，物量已在外部按模式准备，此处不参与计算
     
     返回:
         tuple: (单曲ACC列表, 错误信息)
@@ -225,6 +226,13 @@ def calculate_acc(note_counts: List, acc_str: str) -> Tuple:
             return None, f"ACC变化需要{len(note_counts)}个值，但提供了{len(acc_parts)}个"
         
         acc_change = [float(acc) for acc in acc_parts]
+        if any(notes <= 0 for notes in note_counts):
+            return None, "物量必须为正整数"
+
+        # 使用前缀和
+        prefix_notes = [0]
+        for notes in note_counts:
+            prefix_notes.append(prefix_notes[-1] + notes)
         
         # 计算单曲ACC
         single_accs = []
@@ -233,22 +241,59 @@ def calculate_acc(note_counts: List, acc_str: str) -> Tuple:
                 # 第一首: acc1 = i1
                 acc = acc_change[0]
             else:
-                total_notes_prev = sum(note_counts[:i])
-                total_notes_curr = sum(note_counts[:i+1])
+                total_notes_prev = prefix_notes[i]
+                total_notes_curr = prefix_notes[i + 1]
                 
                 # 计算单曲ACC: acc_i = (i_i * T_i - i_{i-1} * T_{i-1}) / n_i
                 prev_product = acc_change[i-1] * total_notes_prev
                 curr_product = acc_change[i] * total_notes_curr
                 
-                if note_counts[i] == 0:
-                    acc = 0.0
-                else:
-                    acc = (curr_product - prev_product) / note_counts[i]
+                acc = (curr_product - prev_product) / note_counts[i]
             
             single_accs.append(round(acc, 2))
         
         return single_accs, None
         
+    except ValueError as e:
+        return None, f"格式错误: {str(e)}"
+    except ZeroDivisionError:
+        return None, "物量不能为0"
+    except Exception as e:
+        return None, f"计算错误: {str(e)}"
+
+
+def calculate_acc_change(note_counts: List, single_acc_str: str) -> Tuple:
+    """
+    由单曲ACC推算段位ACC变化。
+
+    参数:
+        note_counts: 物量列表
+        single_acc_str: 单曲ACC字符串 (格式: acc1-acc2-acc3-acc4)
+
+    返回:
+        tuple: (段位ACC变化列表, 错误信息)
+    """
+    try:
+        single_parts = single_acc_str.split('-')
+        if len(single_parts) != len(note_counts):
+            return None, f"单曲ACC需要{len(note_counts)}个值，但提供了{len(single_parts)}个"
+
+        single_accs = [float(acc) for acc in single_parts]
+        if any(notes <= 0 for notes in note_counts):
+            return None, "物量必须为正整数"
+
+        prefix_notes = [0]
+        for notes in note_counts:
+            prefix_notes.append(prefix_notes[-1] + notes)
+
+        cumulative_changes = []
+        weighted_sum = 0.0
+        for i, single_acc in enumerate(single_accs, start=1):
+            weighted_sum += single_acc * note_counts[i - 1]
+            cumulative_changes.append(round(weighted_sum / prefix_notes[i], 2))
+
+        return cumulative_changes, None
+
     except ValueError as e:
         return None, f"格式错误: {str(e)}"
     except ZeroDivisionError:
@@ -287,6 +332,37 @@ def calculate_acc_from_dan(dan_name, acc_str, sv2_flag: bool = False) -> Tuple:
     except Exception as e:
         return None, f"计算错误: {str(e)}"
 
+
+def calculate_acc_change_from_dan(dan_name, single_acc_str, sv2_flag: bool = False) -> Tuple:
+    """
+    根据段位名和单曲ACC字符串推算段位ACC变化。
+
+    参数:
+        dan_name: str, 段位名
+        single_acc_str: str, 单曲ACC字符串，用"-"分隔
+
+    返回:
+        tuple: (段位ACC变化列表, 错误信息)
+    """
+    data = acc_data()
+    if dan_name not in data:
+        return None, f"段位 '{dan_name}' 不存在。"
+
+    entry = data[dan_name]
+    note_counts, data_err = extract_note_counts_from_dan(entry, sv2_flag)
+    if data_err:
+        return None, data_err
+
+    try:
+        dan_acc_changes, err_msg = calculate_acc_change(note_counts, single_acc_str)
+        if err_msg:
+            return None, err_msg
+        return dan_acc_changes, None
+    except ValueError as e:
+        return None, f"格式错误: {str(e)}"
+    except Exception as e:
+        return None, f"计算错误: {str(e)}"
+
 # ==================== 辅助函数 ====================
 
 def parse_acc_cmd(cmd_text: str) -> Tuple:
@@ -297,7 +373,7 @@ def parse_acc_cmd(cmd_text: str) -> Tuple:
         cmd_text: str, 命令文本
     
     返回:
-        tuple: (段位名, ACC字符串, bid, num_songs, sv2_flag, 错误信息)
+        tuple: (段位名, ACC字符串, bid, num_songs, sv2_flag, reverse_flag, 错误信息)
     """
     # 移除命令前缀
     cmd_text = cmd_text.strip()
@@ -308,7 +384,7 @@ def parse_acc_cmd(cmd_text: str) -> Tuple:
             break
     
     if not cmd_text:
-        return None, None, None, 4, False, None  # 进入交互模式 默认4段
+        return None, None, None, 4, False, False, None  # 进入交互模式 默认4段
     
     cmd_parts = cmd_text.split()
     err_msg = []
@@ -318,6 +394,7 @@ def parse_acc_cmd(cmd_text: str) -> Tuple:
     acc_str = None
     dan_name = None
     sv2_flag = False
+    reverse_flag = False
     
     # 解析命令
     i = 0
@@ -327,6 +404,12 @@ def parse_acc_cmd(cmd_text: str) -> Tuple:
         # sv2加权模式
         if part.lower() == "-sv2":
             sv2_flag = True
+            i += 1
+            continue
+
+        # 反推模式（仅首轮命令支持）
+        if part.lower() == "-r":
+            reverse_flag = True
             i += 1
             continue
         
@@ -372,7 +455,7 @@ def parse_acc_cmd(cmd_text: str) -> Tuple:
         else:
             i += 1
 
-    return dan_name, acc_str, bid, num_songs, sv2_flag, err_msg
+    return dan_name, acc_str, bid, num_songs, sv2_flag, reverse_flag, err_msg
 
 def get_available_dans():
     """
@@ -414,7 +497,8 @@ def get_acc_result_text(
     note_counts: List = None,
     acc_str: str = "",
     single_accs: List = None,
-    sv2_flag: bool = False
+    sv2_flag: bool = False,
+    reverse_flag: bool = False
 ) -> str:
     """
     构建ACC计算结果消息
@@ -423,8 +507,8 @@ def get_acc_result_text(
         mode: 模式 "predefined", "bid", "file", "custom"
         display_name: 显示名称
         note_counts: 物量列表
-        acc_str: ACC字符串
-        single_accs: 单曲ACC列表
+        acc_str: 输入ACC字符串
+        single_accs: 计算结果列表
     
     返回:
         格式化结果消息
@@ -442,10 +526,12 @@ def get_acc_result_text(
         result_msg += "Mods: ScoreV2\n"
     
     if acc_str:
-        result_msg += f"ACC变化: {acc_str}\n\n"
+        input_label = "单曲ACC" if reverse_flag else "ACC变化"
+        result_msg += f"{input_label}: {acc_str}\n\n"
     
     if single_accs:
-        result_msg += "单曲ACC计算结果:\n"
+        result_label = "推算段位ACC变化" if reverse_flag else "单曲ACC计算结果"
+        result_msg += f"{result_label}:\n"
         i = 1
         for acc_value in single_accs:
             result_msg += f"第{i}首: {acc_value}\n"
