@@ -45,6 +45,20 @@ async def get_file_url(bot: Bot, file_seg: MessageSegment) -> Optional[Tuple[str
         # 获取文件 URL
         file_url = file_data.get("url", "")
 
+        # 如果 url 字段是 HTTP URL，检查 file 字段是否同时存有本地路径，有则调度清理
+        if file_url and file_url.startswith("http"):
+            file_field_raw = file_data.get("file", "")
+            if file_field_raw and not file_field_raw.startswith("http"):
+                # 判断是否是本地路径（Windows 绝对路径 / UNC / Unix / file://）
+                is_local = (
+                    (len(file_field_raw) > 2 and file_field_raw[1] == ':' and file_field_raw[2] in ('\\', '/'))
+                    or file_field_raw.startswith('\\\\')
+                    or file_field_raw.startswith('/')
+                    or file_field_raw.startswith('file://')
+                )
+                if is_local:
+                    asyncio.create_task(cleanup_temp_file(Path(file_field_raw)))
+
         # 如果没有直接的 URL，尝试其他方法
         if not file_url:
             # 方法1: 检查 file 字段是否已经是 URL
@@ -58,7 +72,15 @@ async def get_file_url(bot: Bot, file_seg: MessageSegment) -> Optional[Tuple[str
                 try:
                     # 尝试调用 get_file API（仅部分实现支持）
                     file_info = await bot.call_api("get_file", file_id=file_field)
-                    file_url = file_info.get("url", "") or file_info.get("file", "")
+                    http_url = file_info.get("url", "")
+                    local_file_str = file_info.get("file", "")
+                    if http_url:
+                        file_url = http_url
+                        # 有 HTTP URL 时，本地缓存文件用完即删
+                        if local_file_str and not local_file_str.startswith("http"):
+                            asyncio.create_task(cleanup_temp_file(Path(local_file_str)))
+                    elif local_file_str:
+                        file_url = local_file_str
                     if file_url:
                         logger.info(f"通过 get_file API 获取到 URL: {file_url}")
                 except Exception as e:
@@ -120,6 +142,15 @@ async def download_file(url: str, save_path: Path) -> bool:
 
             logger.info(f"从本地路径复制文件：{local_file_path} -> {save_path}")
             shutil.copy2(local_file_path, save_path)
+            # 仅当源文件不在 bot 工作目录下时才删除，避免误删 bot 自身文件
+            try:
+                cwd = Path.cwd().resolve()
+                src = local_file_path.resolve()
+                if not str(src).startswith(str(cwd)):
+                    local_file_path.unlink()
+                    logger.debug(f"已删除源文件：{local_file_path}")
+            except Exception as e:
+                logger.warning(f"删除源文件失败：{e}")
             return True
         else:
             # HTTP/HTTPS 下载
