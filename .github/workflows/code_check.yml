@@ -1,0 +1,41 @@
+name: Code Checks (static/type/security)
+
+on:
+  push: {}
+  pull_request:
+    types: [closed]
+
+jobs:
+  checks:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true) }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nonebot_plugin_osumania_toolkit
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies & tools
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install ruff mypy pip-audit
+
+      - name: Static analysis (ruff)
+        run: |
+          ruff check .
+
+      - name: Type checking (mypy)
+        run: |
+          mypy .
+
+      - name: Dependency security scan (pip-audit)
+        run: |
+          pip-audit --progress-spinner=off
