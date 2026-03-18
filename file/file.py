@@ -7,7 +7,7 @@ import time
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 from typing import Optional, Tuple
 
 _WINDOWS_RESERVED = re.compile(
@@ -19,6 +19,54 @@ def safe_filename(filename: str) -> str:
     if _WINDOWS_RESERVED.match(name):
         name = '_' + name
     return name
+
+
+def _get_local_path_from_str(path_str: str) -> Optional[Path]:
+    """
+    将字符串解析为本地绝对路径。
+    支持：
+    - 绝对路径（Windows/Unix/UNC）
+    - file:// URI
+    若无法解析为本地绝对路径则返回 None。
+    """
+    if not path_str:
+        return None
+
+    try:
+        if path_str.startswith("file://"):
+            parsed = urlparse(path_str)
+            if parsed.scheme != "file":
+                return None
+            # 对于 file:// URI，从 path 中取实际文件路径并反解码
+            file_path = unquote(parsed.path or "")
+            if not file_path:
+                return None
+            p = Path(file_path)
+        else:
+            p = Path(path_str)
+
+        # 仅接受本地绝对路径，避免误删工作目录等相对路径文件
+        if not p.is_absolute():
+            return None
+    except Exception:
+        return None
+
+    return p
+
+
+def _to_local_path(path_or_uri: str) -> Path:
+    """
+    将可能为 file:// URI 的字符串转换为本地 Path。
+    非 file:// 字符串按原样交给 Path 处理。
+    """
+    if path_or_uri.startswith("file://"):
+        parsed = urlparse(path_or_uri)
+        path = unquote(parsed.path)
+        # 处理类似 file:///C:/path 这种在 Windows 上会多出一个前导斜杠的情况
+        if re.match(r"^/[A-Za-z]:", path):
+            path = path[1:]
+        Path(path)
+    return Path(path_or_uri)
 
 
 async def get_file_url(bot: Bot, file_seg: MessageSegment) -> Optional[Tuple[str, str]]:
@@ -49,15 +97,9 @@ async def get_file_url(bot: Bot, file_seg: MessageSegment) -> Optional[Tuple[str
         if file_url and file_url.startswith("http"):
             file_field_raw = file_data.get("file", "")
             if file_field_raw and not file_field_raw.startswith("http"):
-                # 判断是否是本地路径（Windows 绝对路径 / UNC / Unix / file://）
-                is_local = (
-                    (len(file_field_raw) > 2 and file_field_raw[1] == ':' and file_field_raw[2] in ('\\', '/'))
-                    or file_field_raw.startswith('\\\\')
-                    or file_field_raw.startswith('/')
-                    or file_field_raw.startswith('file://')
-                )
-                if is_local:
-                    asyncio.create_task(cleanup_temp_file(Path(file_field_raw)))
+                local_path = _get_local_path_from_str(file_field_raw)
+                if local_path is not None:
+                    asyncio.create_task(cleanup_temp_file(local_path))
 
         # 如果没有直接的 URL，尝试其他方法
         if not file_url:
@@ -76,9 +118,9 @@ async def get_file_url(bot: Bot, file_seg: MessageSegment) -> Optional[Tuple[str
                     local_file_str = file_info.get("file", "")
                     if http_url:
                         file_url = http_url
-                        # 有 HTTP URL 时，本地缓存文件用完即删
-                        if local_file_str and not local_file_str.startswith("http"):
-                            asyncio.create_task(cleanup_temp_file(Path(local_file_str)))
+                        local_path = _get_local_path_from_str(local_file_str)
+                        if local_path is not None:
+                            asyncio.create_task(cleanup_temp_file(local_path))
                     elif local_file_str:
                         file_url = local_file_str
                     if file_url:
@@ -145,15 +187,7 @@ async def download_file(url: str, save_path: Path) -> bool:
 
             logger.info(f"从本地路径复制文件：{local_file_path} -> {save_path}")
             shutil.copy2(local_file_path, save_path)
-            # 仅当源文件不在 bot 工作目录下时才删除，避免误删 bot 自身文件
-            try:
-                cwd = Path.cwd().resolve()
-                src = local_file_path.resolve()
-                if not str(src).startswith(str(cwd)):
-                    local_file_path.unlink()
-                    logger.debug(f"已删除源文件：{local_file_path}")
-            except Exception as e:
-                logger.warning(f"删除源文件失败：{e}")
+            # 出于安全考虑，这里不再删除源文件，避免潜在的任意文件删除风险
             return True
         else:
             # HTTP/HTTPS 下载
