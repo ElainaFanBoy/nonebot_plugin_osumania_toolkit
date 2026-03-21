@@ -1,5 +1,5 @@
 # nonebot_plugin_osumania_toolkit 依赖文件
-# 2026-03-13
+# 2026-03-21
 
 nonebot2>=2.3.0
 nonebot-adapter-onebot>=2.0.0
@@ -8,6 +8,7 @@ aiohttp>=3.8.0
 Pillow>=10.0.0
 numpy>=1.21.0
 scipy>=1.7.0
+statsmodels>=0.14.0
 matplotlib>=3.5.0
 pydantic>=2.0.0
 pandas>=3.0.0

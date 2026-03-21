@@ -262,7 +262,8 @@ class osr_file:
             parts = frame.split('|')
             if len(parts) < 4:
                 continue
-            w = int(parts[0])
+            # 兼容高精度回放：time_delta 可能包含小数毫秒。
+            w = float(parts[0])
             x_val = float(parts[1])
             y_val = float(parts[2])   # 坐标 y，用于检测定位帧
 
@@ -311,7 +312,8 @@ class osr_file:
             parts = frame.split('|')
             if len(parts) < 4:
                 continue
-            w = int(parts[0])
+            # 兼容高精度回放：time_delta 可能包含小数毫秒。
+            w = float(parts[0])
             x_val = float(parts[1])
             y_val = float(parts[2])
             if w == -12345:
@@ -333,7 +335,7 @@ class osr_file:
             for k, l in enumerate(r_onset):
                 if onset[k] != 0 and l == 0:
                     # 释放，记录原始按压时长
-                    pressset_raw[k].append(int(timeset[k]))
+                    pressset_raw[k].append(float(timeset[k]))
                     timeset[k] = 0
             onset = r_onset
 
@@ -368,9 +370,9 @@ class osr_file:
         self.press_events_float = [(col, t * corrector) for col, t in press_events_raw]
         self.press_times = [int(round(t)) for t in self.press_times_float]
         self.press_events = [(col, int(round(t))) for col, t in self.press_events_float]
-        self.intervals = [int(w * corrector) for w in intervals_raw]
+        self.intervals = [int(round(w * corrector)) for w in intervals_raw]
         self.pressset = [
-            [int(d * corrector) for d in col_data] if col_data else []
+            [int(round(d * corrector)) for d in col_data] if col_data else []
             for col_data in pressset_raw
         ]
 

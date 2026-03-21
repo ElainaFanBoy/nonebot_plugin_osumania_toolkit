@@ -16,7 +16,7 @@ from ..file.mr_file_parser import mr_file
 from ..file.draw import run_plot_comprehensive
 from ..file.file import safe_filename, download_file, download_file_by_id, cleanup_temp_file, get_file_url
 from ..algorithm.utils import parse_cmd, is_mc_file
-from ..algorithm.cheat_analyze import run_analyze_cheating
+from ..algorithm.analyze import run_analyze_cheating
 from ..algorithm.convert import convert_mr_to_osr, convert_mc_to_osu
 
 CACHE_DIR = get_plugin_cache_dir()

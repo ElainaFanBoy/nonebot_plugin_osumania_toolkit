@@ -297,8 +297,10 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
     osr.intervals = []
     osr.intervals_raw = []
     osr.press_times = []
+    osr.press_times_float = []
     osr.press_times_raw = []
     osr.press_events = []
+    osr.press_events_float = []
     osr.press_events_raw = []
     osr.play_data = []
 
@@ -323,7 +325,7 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
             continue  # 忽略超出轨道
         
         # 计算逆缩放时间（用于与谱面匹配）
-        time_scaled = int(time_raw / speed_factor) if speed_factor != 0 else time_raw
+        time_scaled = (float(time_raw) / speed_factor) if speed_factor != 0 else float(time_raw)
         
         # 根据 action 更新状态
         if action == 1:  # 按下
@@ -332,8 +334,10 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
                 pressed_start_raw[col] = time_raw
                 pressed_start_scaled[col] = time_scaled
                 # 记录按下事件（使用逆缩放时间，用于与谱面匹配）
-                osr.press_times.append(time_scaled)
-                osr.press_events.append((col, time_scaled))
+                osr.press_times_float.append(float(time_scaled))
+                osr.press_events_float.append((col, float(time_scaled)))
+                osr.press_times.append(int(round(time_scaled)))
+                osr.press_events.append((col, int(round(time_scaled))))
                 # 同时保存原始时间
                 osr.press_times_raw.append(time_raw)
                 osr.press_events_raw.append((col, time_raw))
@@ -344,7 +348,7 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
                     duration_raw = time_raw - pressed_start_raw[col]
                     duration_scaled = time_scaled - pressed_start_scaled[col]
                     if duration_raw >= 0:
-                        osr.pressset[col].append(int(duration_raw))
+                        osr.pressset[col].append(int(round(float(duration_scaled))))
                     pressed_start_raw[col] = None
                     pressed_start_scaled[col] = None
         # 构建当前时刻的按键掩码
@@ -365,7 +369,7 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
         if delta_scaled < 0:
             delta_scaled = 0
         # 创建事件对象（使用原始时间差，保持内部一致性）
-        event = ReplayEvent(delta_raw, keys_mask)
+        event = ReplayEvent(int(round(float(delta_raw))), keys_mask)
         osr.play_data.append(event)
         osr.intervals.append(delta_raw)
         osr.intervals_raw.append(delta_raw)

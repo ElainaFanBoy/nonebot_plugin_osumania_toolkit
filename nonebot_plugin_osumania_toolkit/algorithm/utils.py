@@ -47,9 +47,46 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
         list of (col, note_time, press_time) 详细匹配对
     """
     note_times_by_col = osu.note_times
+
+    # 对同一 (osu, osr) 对象复用匹配结果，减少分析与绘图重复计算。
+    cache = getattr(osr, "_match_notes_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(osr, "_match_notes_cache", cache)
+
+    press_events_ref = getattr(osr, "press_events_float", None) or osr.press_events
+
+    # 通过采样签名避免仅按长度命中缓存，导致复用过期匹配结果。
+    def _events_signature(events: list[tuple[int, float]]) -> tuple:
+        n = len(events)
+        if n == 0:
+            return (0,)
+        pick_idx = sorted({0, n // 2, n - 1})
+        sample = tuple((int(events[i][0]), round(float(events[i][1]), 3)) for i in pick_idx)
+        return (n, sample)
+
+    events_sig = _events_signature(press_events_ref)
+    cache_key = (
+        id(osu),
+        id(note_times_by_col),
+        events_sig,
+        int(getattr(osr, "mod", 0) or 0),
+        float(getattr(osu, "od", 0.0) or 0.0),
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        cached_delta = cached[0]
+        cached_frac_count = sum(1 for _, d in cached_delta if abs(float(d) - round(float(d))) > 1e-6)
+        logger.debug(
+            f"match_notes_and_presses 命中缓存: events_sig={events_sig}, "
+            f"delta_count={len(cached_delta)}, frac_count={cached_frac_count}"
+        )
+        return cached
+
     all_notes = [t for times in note_times_by_col.values() for t in times]
     if not all_notes:
-        return [], []
+        cache[cache_key] = ([], [])
+        return cache[cache_key]
     min_note = min(all_notes)
     max_note = max(all_notes)
     buffer = 5000
@@ -57,9 +94,7 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
     # 获取按下事件（使用已缩放的时间，用于匹配谱面）
     # 对于普通.osr文件：press_events是实时时间（已应用速度模组）
     # 对于.mr转换的osr文件：press_events是逆缩放时间（用于匹配原始谱面时间）
-    press_events = getattr(osr, "press_events_float", None)
-    if not press_events:
-        press_events = osr.press_events
+    press_events = press_events_ref
 
     # 检查是否启用 Mirror 模组 (MR)
     mod_value = getattr(osr, 'mod', 0)
@@ -118,8 +153,15 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
                 delta_list.append((col, presses[best] - note))
                 matched_pairs.append((col, note, presses[best]))
     logger.debug(f"匹配到的点数量: {len(delta_list)}")
+    frac_count = sum(1 for _, d in delta_list if abs(float(d) - round(float(d))) > 1e-6)
+    delta_preview = [round(float(d), 3) for _, d in delta_list[:8]]
+    logger.debug(
+        f"match_notes_and_presses 计算完成: events_sig={events_sig}, "
+        f"frac_count={frac_count}, preview={delta_preview}"
+    )
     logger.debug(f"匹配到的最后物件时间: {max(note for _, note, _ in matched_pairs) if matched_pairs else 0} ms")
-    return delta_list, matched_pairs
+    cache[cache_key] = (delta_list, matched_pairs)
+    return cache[cache_key]
 
 def parse_cmd(cmd_text: str):
     # 辅助变量
