@@ -9,9 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Tuple
 
-from ..chart import Chart, NoteType
-from .density import Density
-from ..calculator.difficulty import Difficulty
+from .chart import Chart, NoteType
 
 
 class Direction(Enum):
@@ -27,14 +25,49 @@ class RowInfo:
     Index: int
     Time: float
     MsPerBeat: float
+    BeatLength: float
     Notes: int
     Jacks: int
     Direction: Direction
     Roll: bool
-    Density: Density
-    Variety: float
-    Strains: List[float]
+    Keys: int
+    LeftHandKeys: int
+    LNHeads: List[int]
+    LNBodies: List[int]
+    LNTails: List[int]
+    NormalNotes: List[int]
     RawNotes: List[int]
+
+
+def _keys_on_left_hand(keymode: int) -> int:
+    if keymode == 3:
+        return 2
+    if keymode == 4:
+        return 2
+    if keymode == 5:
+        return 3
+    if keymode == 6:
+        return 3
+    if keymode == 7:
+        return 4
+    if keymode == 8:
+        return 4
+    if keymode == 9:
+        return 5
+    if keymode == 10:
+        return 5
+    return max(1, keymode // 2)
+
+
+def _beat_length_at(chart: Chart, time: float) -> float:
+    if len(chart.BPM) == 0:
+        return 500.0
+    current = chart.BPM[0].Data.MsPerBeat
+    for item in chart.BPM:
+        if item.Time > time:
+            break
+        current = item.Data.MsPerBeat
+    return current
 
 
 def detect_direction(previous_row: List[int], current_row: List[int]) -> Tuple[Direction, bool]:
@@ -71,7 +104,7 @@ def detect_direction(previous_row: List[int], current_row: List[int]) -> Tuple[D
     return direction, is_roll
 
 
-def calculate_primitives(density_arr: List[Density], difficulty_info: Difficulty, chart: Chart) -> List[RowInfo]:
+def calculate_primitives(chart: Chart) -> List[RowInfo]:
     first_note = chart.Notes[0].Time
     first_row = chart.Notes[0].Data
 
@@ -82,6 +115,7 @@ def calculate_primitives(density_arr: List[Density], difficulty_info: Difficulty
 
     previous_time = first_note
     index = 0
+    left_hand_keys = _keys_on_left_hand(chart.Keys)
 
     out: List[RowInfo] = []
 
@@ -91,33 +125,57 @@ def calculate_primitives(density_arr: List[Density], difficulty_info: Difficulty
         row = item.Data
         index += 1
 
-        current_row = [k for k in range(chart.Keys) if row[k] in (NoteType.NORMAL, NoteType.HOLDHEAD)]
-        if len(current_row) == 0:
+        current_row: List[int] = []
+        normal_notes: List[int] = []
+        ln_heads: List[int] = []
+        ln_bodies: List[int] = []
+        ln_tails: List[int] = []
+        for k in range(chart.Keys):
+            n = row[k]
+            if n in (NoteType.NORMAL, NoteType.HOLDHEAD):
+                current_row.append(k)
+            if n == NoteType.NORMAL:
+                normal_notes.append(k)
+            if n == NoteType.HOLDHEAD:
+                ln_heads.append(k)
+            elif n == NoteType.HOLDBODY:
+                ln_bodies.append(k)
+            elif n == NoteType.HOLDTAIL:
+                ln_tails.append(k)
+
+        if len(current_row) == 0 and len(ln_heads) == 0 and len(ln_bodies) == 0 and len(ln_tails) == 0:
             continue
 
-        direction, is_roll = detect_direction(previous_row, current_row)
-        # Jacks = current_row.Length - (Array.except previous_row current_row).Length
-        # 即：当前行里有多少列也在上一行里（交集大小）
-        except_count = len([x for x in current_row if x not in previous_row])
-        jacks = len(current_row) - except_count
+        if len(current_row) > 0:
+            direction, is_roll = detect_direction(previous_row, current_row)
+            # Jacks：当前行与上一有效按键行的列交集大小。
+            jacks = len(set(current_row).intersection(previous_row))
+        else:
+            direction, is_roll = Direction.None_, False
+            jacks = 0
 
         out.append(
             RowInfo(
                 Index=index,
                 Time=(t - first_note),
                 MsPerBeat=(t - previous_time) * 4.0,   # *4 => 1/4 间隔
+                BeatLength=_beat_length_at(chart, t),
                 Notes=len(current_row),
                 Jacks=jacks,
                 Direction=direction,
                 Roll=is_roll,
-                Density=density_arr[index],
-                Variety=difficulty_info.Variety[index],
-                Strains=difficulty_info.Strains[index].StrainV1Notes,
+                Keys=chart.Keys,
+                LeftHandKeys=left_hand_keys,
+                LNHeads=ln_heads,
+                LNBodies=ln_bodies,
+                LNTails=ln_tails,
+                NormalNotes=normal_notes,
                 RawNotes=current_row,
             )
         )
 
-        previous_row = current_row
+        if len(current_row) > 0:
+            previous_row = current_row
         previous_time = t
 
     return out

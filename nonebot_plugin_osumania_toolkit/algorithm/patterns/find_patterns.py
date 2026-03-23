@@ -8,9 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..chart import Chart
-from ..calculator.difficulty import Difficulty
-from .density import Density
+from .config import PATTERN_STABILITY_THRESHOLD
+from .chart import Chart
 from .primitives import RowInfo, calculate_primitives
 from .patterns_def import (
     CorePattern,
@@ -18,6 +17,9 @@ from .patterns_def import (
     CORE_STREAM,
     CORE_CHORDSTREAM,
     CORE_JACKS,
+    CORE_COORDINATION,
+    CORE_DENSITY,
+    CORE_WILDCARD,
     SPECIFIC_4K,
     SPECIFIC_7K,
     SPECIFIC_OTHER,
@@ -32,12 +34,6 @@ class FoundPattern:
     Start: float
     End: float
     MsPerBeat: float
-    Strains: List[float]
-    Density: float
-
-
-PATTERN_STABILITY_THRESHOLD = 5.0
-
 
 def _pick_specific(specific_list, remaining: List[RowInfo]):
     # F#：tryPick 找到第一个返回非 0 的 recogniser
@@ -46,6 +42,14 @@ def _pick_specific(specific_list, remaining: List[RowInfo]):
         if n != 0:
             return n, name
     return None
+
+
+def _resolved_mspb(pattern: CorePattern, specific_type: Optional[str], mean_mspb: float) -> float:
+    if pattern == CorePattern.Density and specific_type == "Inverse":
+        return 0.0
+    if pattern == CorePattern.Wildcard and specific_type == "TimingHell":
+        return 0.0
+    return mean_mspb
 
 
 def matches(specific_patterns: SpecificPatterns, last_note: float, primitives: List[RowInfo]) -> List[FoundPattern]:
@@ -77,9 +81,7 @@ def matches(specific_patterns: SpecificPatterns, last_note: float, primitives: L
                     Mixed=mixed,
                     Start=start,
                     End=end,
-                    MsPerBeat=mean_mspb,
-                    Strains=remaining[0].Strains,
-                    Density=sum(x.Density for x in d) / len(d),
+                    MsPerBeat=_resolved_mspb(CorePattern.Stream, specific_type, mean_mspb),
                 )
             )
 
@@ -107,9 +109,7 @@ def matches(specific_patterns: SpecificPatterns, last_note: float, primitives: L
                     Mixed=mixed,
                     Start=start,
                     End=end,
-                    MsPerBeat=mean_mspb,
-                    Strains=remaining[0].Strains,
-                    Density=sum(x.Density for x in d) / len(d),
+                    MsPerBeat=_resolved_mspb(CorePattern.Chordstream, specific_type, mean_mspb),
                 )
             )
 
@@ -139,9 +139,91 @@ def matches(specific_patterns: SpecificPatterns, last_note: float, primitives: L
                     Mixed=mixed,
                     Start=start,
                     End=end,
-                    MsPerBeat=mean_mspb,
-                    Strains=remaining[0].Strains,
-                    Density=sum(x.Density for x in d) / len(d),
+                    MsPerBeat=_resolved_mspb(CorePattern.Jacks, specific_type, mean_mspb),
+                )
+            )
+
+        # Coordination
+        n = CORE_COORDINATION(remaining)
+        if n != 0:
+            picked = _pick_specific(specific_patterns.Coordination, remaining)
+            if picked is None:
+                n2, specific_type = n, None
+            else:
+                m, st = picked
+                n2, specific_type = max(n, m), st
+
+            d = remaining[:n2]
+            mean_mspb = sum(x.MsPerBeat for x in d) / len(d)
+
+            mixed = not all(abs(x.MsPerBeat - mean_mspb) < PATTERN_STABILITY_THRESHOLD for x in d)
+            start = remaining[0].Time
+            end = remaining[n2].Time if n2 < len(remaining) else last_note
+
+            results.append(
+                FoundPattern(
+                    Pattern=CorePattern.Coordination,
+                    SpecificType=specific_type,
+                    Mixed=mixed,
+                    Start=start,
+                    End=end,
+                    MsPerBeat=_resolved_mspb(CorePattern.Coordination, specific_type, mean_mspb),
+                )
+            )
+
+        # Density
+        n = CORE_DENSITY(remaining)
+        if n != 0:
+            picked = _pick_specific(specific_patterns.Density, remaining)
+            if picked is None:
+                n2, specific_type = n, None
+            else:
+                m, st = picked
+                n2, specific_type = max(n, m), st
+
+            d = remaining[:n2]
+            mean_mspb = sum(x.MsPerBeat for x in d) / len(d)
+
+            mixed = not all(abs(x.MsPerBeat - mean_mspb) < PATTERN_STABILITY_THRESHOLD for x in d)
+            start = remaining[0].Time
+            end = remaining[n2].Time if n2 < len(remaining) else last_note
+
+            results.append(
+                FoundPattern(
+                    Pattern=CorePattern.Density,
+                    SpecificType=specific_type,
+                    Mixed=mixed,
+                    Start=start,
+                    End=end,
+                    MsPerBeat=_resolved_mspb(CorePattern.Density, specific_type, mean_mspb),
+                )
+            )
+
+        # Wildcard
+        n = CORE_WILDCARD(remaining)
+        if n != 0:
+            picked = _pick_specific(specific_patterns.Wildcard, remaining)
+            if picked is None:
+                n2, specific_type = n, None
+            else:
+                m, st = picked
+                n2, specific_type = max(n, m), st
+
+            d = remaining[:n2]
+            mean_mspb = sum(x.MsPerBeat for x in d) / len(d)
+
+            mixed = not all(abs(x.MsPerBeat - mean_mspb) < PATTERN_STABILITY_THRESHOLD for x in d)
+            start = remaining[0].Time
+            end = remaining[n2].Time if n2 < len(remaining) else last_note
+
+            results.append(
+                FoundPattern(
+                    Pattern=CorePattern.Wildcard,
+                    SpecificType=specific_type,
+                    Mixed=mixed,
+                    Start=start,
+                    End=end,
+                    MsPerBeat=_resolved_mspb(CorePattern.Wildcard, specific_type, mean_mspb),
                 )
             )
 
@@ -150,8 +232,8 @@ def matches(specific_patterns: SpecificPatterns, last_note: float, primitives: L
     return results
 
 
-def find(density: List[Density], difficulty_info: Difficulty, chart: Chart) -> List[FoundPattern]:
-    primitives = calculate_primitives(density, difficulty_info, chart)
+def find(chart: Chart) -> List[FoundPattern]:
+    primitives = calculate_primitives(chart)
 
     if chart.Keys == 4:
         keymode_patterns = SPECIFIC_4K()

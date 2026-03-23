@@ -1,5 +1,4 @@
 import os
-import zipfile
 import asyncio
 import time
 import shutil
@@ -9,7 +8,7 @@ from ..file.osu_file_parser import osu_file
 
 from .xxy_algorithm import calculate
 from ..algorithm.convert import convert_mc_to_osu
-from ..algorithm.utils import is_mc_file, parse_osu_filename
+from ..algorithm.utils import is_mc_file, parse_osu_filename, extract_zip_file
 from ..file.data import sr_intervals_data
 
 # 自定义异常，用于捕获特定错误类型，便于在调用处进行针对性处理
@@ -79,29 +78,6 @@ async def get_rework_result(file_path: str, speed_rate: float, od_flag, cvt_flag
     if sr == -2:
         raise NotManiaError()
     return sr, LN_ratio, column_count
-
-def extract_zip_file(zip_path: Path, extract_dir: Path) -> list[Path]:
-    """解压zip文件并返回所有.osu和.mc文件的路径列表"""
-    extracted_files = []
-    
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        file_list = zip_ref.namelist()
-        chart_files = [f for f in file_list if f.lower().endswith(('.osu', '.mc'))]
-        
-        if not chart_files:
-            raise ValueError("压缩包中没有找到.osu或.mc文件")
-        
-        for file in chart_files:
-            target_path = extract_dir / os.path.basename(file)
-            zip_ref.extract(file, extract_dir)
-            
-            extracted_path = extract_dir / file
-            if extracted_path.exists():
-                if extracted_path != target_path:
-                    extracted_path.rename(target_path)
-                extracted_files.append(target_path)
-    
-    return extracted_files
 
 async def process_chart_file(chart_file: Path, speed_rate: float, od_flag, cvt_flag, mod_display: str) -> str:
     """处理单个谱面文件并返回结果文本"""

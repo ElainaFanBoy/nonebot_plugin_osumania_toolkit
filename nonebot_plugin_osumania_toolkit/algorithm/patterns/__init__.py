@@ -1,13 +1,18 @@
-from .service import (
-    PatternParseError,
+﻿from .service import (
+    PatternAnalysisResult,
     PatternNotManiaError,
+    PatternParseError,
     analyze_pattern_file,
     format_pattern_result_text,
 )
 
 __all__ = [
-    "PatternParseError",
+    "PatternAnalysisResult",
     "PatternNotManiaError",
+    "PatternParseError",
     "analyze_pattern_file",
     "format_pattern_result_text",
 ]
+
+
+

@@ -7,39 +7,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
-import math
 
-from ..calculator.difficulty import weighted_overall_difficulty
+from .config import BPM_CLUSTER_THRESHOLD, CLUSTER_SPECIFIC_NAME_MIN_RATIO
 from .find_patterns import FoundPattern
-from .density import Density
-from .patterns_def import CorePattern
-
-
-BPM_CLUSTER_THRESHOLD = 5.0  # ms/beat
+from .patterns_def import CorePattern, resolve_rating_multiplier
 
 
 @dataclass
 class Cluster:
     Pattern: CorePattern
     SpecificTypes: List[Tuple[str, float]]
+    RatingMultiplier: float
     BPM: int
     Mixed: bool
-    Rating: float
-
-    Density10: Density
-    Density25: Density
-    Density50: Density
-    Density75: Density
-    Density90: Density
-
     Amount: float  # ms
 
     @property
     def Importance(self) -> float:
-        return self.Amount * self.Pattern.RatingMultiplier * float(self.BPM)
+        return self.Amount * self.RatingMultiplier * float(self.BPM)
 
     def Format(self, rate: float) -> str:
-        if len(self.SpecificTypes) > 0 and self.SpecificTypes[0][1] > 0.4:
+        if len(self.SpecificTypes) > 0 and self.SpecificTypes[0][1] >= CLUSTER_SPECIFIC_NAME_MIN_RATIO:
             name = self.SpecificTypes[0][0]
         else:
             name = self.Pattern.value
@@ -61,21 +49,16 @@ class _ClusterBuilder:
 
     def Calculate(self) -> None:
         average = self.SumMs / float(self.Count)
-        bpm = int(round(60000.0 / average))
+        if average <= 0.0:
+            bpm = 0
+        else:
+            bpm = int(round(60000.0 / average))
         self.BPM = bpm
 
     @property
     def Value(self) -> int:
         assert self.BPM is not None
         return self.BPM
-
-
-def find_percentile(percentile: float, sorted_values: List[float]) -> float:
-    if len(sorted_values) == 0:
-        return 0.0
-    index = int(math.floor(percentile * float(len(sorted_values))))
-    index = max(0, min(index, len(sorted_values) - 1))
-    return sorted_values[index]
 
 
 def _pattern_amount(sorted_starts_ends: List[Tuple[float, float]]) -> float:
@@ -141,7 +124,6 @@ def specific_clusters(patterns_with_clusters: List[Tuple[FoundPattern, _ClusterB
     out: List[Cluster] = []
     for (pattern, mixed, bpm), data in groups.items():
         starts_ends = sorted([(m.Start, m.End) for (m, _) in data], key=lambda x: x[0])
-        densities = sorted([m.Density for (m, _) in data])
 
         data_count = float(len(data))
         # 统计 specific type 占比
@@ -150,27 +132,15 @@ def specific_clusters(patterns_with_clusters: List[Tuple[FoundPattern, _ClusterB
             if m.SpecificType is not None:
                 counter[m.SpecificType] = counter.get(m.SpecificType, 0) + 1
         specific_types = sorted([(k, v / data_count) for k, v in counter.items()], key=lambda x: x[1], reverse=True)
-
-        # Rating：把 data 里所有 Strains concat filter>0 然后 weighted_overall_difficulty
-        all_strains = []
-        for m, _ in data:
-            for x in m.Strains:
-                if x > 0.0:
-                    all_strains.append(x)
-        rating = weighted_overall_difficulty(all_strains)
+        dominant_specific = specific_types[0][0] if len(specific_types) > 0 else None
 
         out.append(
             Cluster(
                 Pattern=pattern,
                 SpecificTypes=specific_types,
+                RatingMultiplier=resolve_rating_multiplier(pattern, dominant_specific),
                 BPM=bpm,
                 Mixed=mixed,
-                Rating=rating,
-                Density10=find_percentile(0.1, densities),
-                Density25=find_percentile(0.25, densities),
-                Density50=find_percentile(0.5, densities),
-                Density75=find_percentile(0.75, densities),
-                Density90=find_percentile(0.9, densities),
                 Amount=_pattern_amount(starts_ends) if len(starts_ends) > 0 else 0.0,
             )
         )

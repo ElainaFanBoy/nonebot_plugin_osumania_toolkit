@@ -371,17 +371,10 @@ def parse_osu_mania(path: str) -> Chart:
         lines = f.readlines()
     sections = _parse_sections(lines)
 
-    general = _parse_kv(sections.get("General", []))
-    mode = general.get("Mode", "3").strip()
-    if mode and mode != "3":
-        raise ValueError("Beatmap is not mania mode")
-
     diff = _parse_kv(sections.get("Difficulty", []))
     try:
         keys = int(float(diff.get("CircleSize", "4")))
     except Exception:
-        keys = 4
-    if keys <= 0:
         keys = 4
 
     timing_points = _parse_timing_points(sections.get("TimingPoints", []))

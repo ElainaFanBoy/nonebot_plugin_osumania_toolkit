@@ -1,5 +1,6 @@
 import bisect
 import json
+import zipfile
 import os
 
 from nonebot.log import logger
@@ -162,6 +163,30 @@ def match_notes_and_presses(osu: osu_file, osr: osr_file):
     logger.debug(f"匹配到的最后物件时间: {max(note for _, note, _ in matched_pairs) if matched_pairs else 0} ms")
     cache[cache_key] = (delta_list, matched_pairs)
     return cache[cache_key]
+
+
+def extract_zip_file(zip_path: Path, extract_dir: Path) -> list[Path]:
+    """解压zip文件并返回所有.osu和.mc文件的路径列表"""
+    extracted_files = []
+    
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        file_list = zip_ref.namelist()
+        chart_files = [f for f in file_list if f.lower().endswith(('.osu', '.mc'))]
+        
+        if not chart_files:
+            raise ValueError("压缩包中没有找到.osu或.mc文件")
+        
+        for file in chart_files:
+            target_path = extract_dir / os.path.basename(file)
+            zip_ref.extract(file, extract_dir)
+            
+            extracted_path = extract_dir / file
+            if extracted_path.exists():
+                if extracted_path != target_path:
+                    extracted_path.rename(target_path)
+                extracted_files.append(target_path)
+    
+    return extracted_files
 
 def parse_cmd(cmd_text: str):
     # 辅助变量

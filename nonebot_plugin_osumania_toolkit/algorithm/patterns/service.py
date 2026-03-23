@@ -1,11 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from dataclasses import dataclass
+from pathlib import Path
 
 from .osu_parser import parse_osu_mania
-from .calculator.difficulty import calculate as calc_difficulty
-from .patterns.summary import PatternReport, from_chart
+from .output_writer import render_output_lines
+from .summary import PatternReport, from_chart
 
 
 class PatternParseError(Exception):
@@ -16,58 +17,78 @@ class PatternNotManiaError(Exception):
     pass
 
 
-def _format_specific_types(specific_types: list[tuple[str, float]]) -> str:
-    if not specific_types:
-        return ""
-    parts = []
-    for name, ratio in specific_types[:3]:
-        parts.append(f"{ratio * 100:.0f}% {name}")
-    return ", ".join(parts)
+@dataclass
+class PatternAnalysisResult:
+    keys: int
+    report: PatternReport
 
 
-def format_pattern_result_text(meta_data, report: PatternReport, rate: float = 1.0) -> str:
-    lines = []
+def _is_mania_osu(file_path: str) -> bool:
+    try:
+        in_general = False
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    in_general = (line == "[General]")
+                    continue
+                if in_general and line.lower().startswith("mode:"):
+                    mode_val = line.split(":", 1)[1].strip()
+                    return mode_val == "3"
+        # 若缺失 Mode 字段，保持兼容旧谱面，按 mania 继续尝试解析。
+        return True
+    except Exception:
+        return True
 
+
+def _analyze_pattern_file_sync(file_path: str) -> PatternAnalysisResult:
+    path = Path(file_path)
+    if not path.exists():
+        raise PatternParseError(f"文件不存在: {file_path}")
+
+    if path.suffix.lower() != ".osu":
+        raise PatternParseError("仅支持 .osu 谱面文件")
+
+    if not _is_mania_osu(file_path):
+        raise PatternNotManiaError("该谱面不是 mania 模式")
+
+    try:
+        chart = parse_osu_mania(file_path)
+        report = from_chart(chart)
+        return PatternAnalysisResult(keys=chart.Keys, report=report)
+    except PatternNotManiaError:
+        raise
+    except Exception as exc:
+        raise PatternParseError(str(exc)) from exc
+
+
+async def analyze_pattern_file(file_path: str, rate: float = 1.0) -> PatternAnalysisResult:
+    _ = rate
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _analyze_pattern_file_sync, file_path)
+
+
+def _format_meta_line(meta_data) -> str:
     if isinstance(meta_data, dict):
-        creator = meta_data.get("Creator", "Unknown")
-        artist = meta_data.get("Artist", "Unknown")
-        title = meta_data.get("Title", "Unknown")
-        version = meta_data.get("Version", "Unknown")
-        lines.append(f"{creator} // {artist} - {title} [{version}]")
-    else:
-        lines.append("谱面信息解析失败")
+        required = {"Creator", "Artist", "Title", "Version"}
+        if required.issubset(meta_data.keys()):
+            return f"{meta_data['Creator']} // {meta_data['Artist']} - {meta_data['Title']} [{meta_data['Version']}]"
+    return "谱面信息解析失败"
 
-    lines.append(f"键型分类: {report.Category}")
 
-    if not report.Clusters:
-        lines.append("未识别到有效键型聚类。")
-    else:
-        lines.append("键型聚类:")
-        for c in report.Clusters:
-            row = f"- {c.Format(rate)} | Rating={c.Rating:.3f} | Amount={c.Amount/1000.0:.2f}s"
-            st = _format_specific_types(c.SpecificTypes)
-            if st:
-                row += f" | {st}"
-            lines.append(row)
-
+def format_pattern_result_text(meta_data, result: PatternAnalysisResult, rate: float = 1.0) -> str:
+    lines: list[str] = ["键型分析结果", _format_meta_line(meta_data)]
+    lines.extend(
+        render_output_lines(
+            rate=rate,
+            category=result.report.Category,
+            clusters=result.report.Clusters,
+            duration_ms=result.report.Duration,
+        )
+    )
     return "\n".join(lines)
 
 
-def _analyze_pattern_file_sync(file_path: str, rate: float) -> PatternReport:
-    chart = parse_osu_mania(file_path)
-    diff = calc_difficulty(rate, chart.Notes)
-    return from_chart(diff, chart)
 
-
-async def analyze_pattern_file(file_path: str, rate: float = 1.0) -> PatternReport:
-    loop = asyncio.get_running_loop()
-    try:
-        return await loop.run_in_executor(None, _analyze_pattern_file_sync, file_path, rate)
-    except PatternNotManiaError:
-        raise
-    except ValueError as e:
-        if "not mania" in str(e).lower():
-            raise PatternNotManiaError() from e
-        raise PatternParseError(str(e)) from e
-    except Exception as e:
-        raise PatternParseError(str(e)) from e
