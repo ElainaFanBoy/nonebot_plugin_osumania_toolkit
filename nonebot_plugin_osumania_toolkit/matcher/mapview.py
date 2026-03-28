@@ -65,20 +65,24 @@ async def handle_mapview(bot: Bot, event: MessageEvent):
                     tmp_file, speed_rate, od_flag, cvt_flag, mod_display, CACHE_DIR
                 )
 
-                if not rows and not errors:
-                    await mapview.finish("图包中没有可分析的谱面文件。")
-
-                nodes: list[Message] = []
+                nodes: list[Message | str] = []
                 for row in rows:
-                    image_bytes = await render_analysis_card(TEMPLATE_DIR, row["template"])
-                    nodes.append(
-                        Message(f"{row['file_name']}\n") + MessageSegment.image(image_bytes)
-                    )
+                    try:
+                        image_bytes = await render_analysis_card(TEMPLATE_DIR, row["template"])
+                        nodes.append(
+                            Message(f"{row['file_name']}\n") + MessageSegment.image(image_bytes)
+                        )
+                    except Exception as e:
+                        errors.append(f"{row['file_name']}: 图片渲染失败 - {e}")
 
-                if nodes:
-                    await send_forward_text_messages(bot, event, nodes)
                 if errors:
-                    await mapview.send("部分谱面分析失败：\n" + "\n".join(errors))
+                    for err in errors:
+                        nodes.append(err)
+
+                if not nodes:
+                    nodes = ["图包中没有可分析的谱面文件。"]
+
+                await send_forward_text_messages(bot, event, nodes)
                 await mapview.finish()
 
             else:

@@ -54,14 +54,21 @@ def get_rework_result_text(meta_data, mod_display: str, sr: float, speed_rate: f
 async def get_rework_result(file_path: str, speed_rate: float, od_flag, cvt_flag):
     loop = asyncio.get_running_loop()
     # 将转换标记传入算法
-    result = await loop.run_in_executor(
-        None,
-        calculate,
-        str(file_path),
-        speed_rate,
-        od_flag,
-        cvt_flag
-    )
+    try:
+        result = await loop.run_in_executor(
+            None,
+            calculate,
+            str(file_path),
+            speed_rate,
+            od_flag,
+            cvt_flag
+        )
+    except Exception as exc:
+        # Workaround for sporadic runtime failure: "Future object is not initialized".
+        if "Future object is not initialized" in str(exc):
+            result = calculate(str(file_path), speed_rate, od_flag, cvt_flag)
+        else:
+            raise
 
     if isinstance(result, (int, float)):
         if result == -1:
@@ -247,4 +254,4 @@ def est_diff(sr: float, LN_ratio: float, column_count: int) -> str:
         
         return f"{RC_diff} || {LN_diff}"
     
-    return "未知难度"
+    return f"Unsupported"

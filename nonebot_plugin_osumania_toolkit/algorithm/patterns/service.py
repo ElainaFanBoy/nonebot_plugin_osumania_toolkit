@@ -67,7 +67,13 @@ def _analyze_pattern_file_sync(file_path: str) -> PatternAnalysisResult:
 async def analyze_pattern_file(file_path: str, rate: float = 1.0) -> PatternAnalysisResult:
     _ = rate
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _analyze_pattern_file_sync, file_path)
+    try:
+        return await loop.run_in_executor(None, _analyze_pattern_file_sync, file_path)
+    except Exception as exc:
+        # Workaround for sporadic runtime failure: "Future object is not initialized".
+        if "Future object is not initialized" in str(exc):
+            return _analyze_pattern_file_sync(file_path)
+        raise
 
 
 def _format_meta_line(meta_data) -> str:

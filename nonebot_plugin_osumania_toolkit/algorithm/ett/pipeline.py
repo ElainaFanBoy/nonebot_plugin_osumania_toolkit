@@ -153,14 +153,21 @@ async def analyze_ett_chart(
     keycount = _resolve_keycount(chart.column_count)
 
     loop = asyncio.get_running_loop()
-    values = await loop.run_in_executor(
-        None,
-        _compute_values,
-        chart,
-        speed_rate,
-        keycount,
-        score_goal,
-    )
+    try:
+        values = await loop.run_in_executor(
+            None,
+            _compute_values,
+            chart,
+            speed_rate,
+            keycount,
+            score_goal,
+        )
+    except Exception as exc:
+        # Workaround for sporadic runtime failure: "Future object is not initialized".
+        if "Future object is not initialized" in str(exc):
+            values = _compute_values(chart, speed_rate, keycount, score_goal)
+        else:
+            raise
     pattern_result = await analyze_pattern_file(str(target_file), rate=speed_rate)
 
     meta_data = resolve_meta_data(target_file, target_name)
@@ -207,7 +214,16 @@ async def analyze_ett_zip(
     errors: list[str] = []
 
     try:
-        chart_files = extract_zip_file(zip_file, temp_dir)
+        try:
+            chart_files = extract_zip_file(zip_file, temp_dir)
+        except Exception as e:
+            errors.append(f"图包分析失败 - {e}")
+            return results, errors
+
+        if not chart_files:
+            errors.append("图包中没有可分析的谱面文件。")
+            return results, errors
+
         for chart_file in chart_files:
             try:
                 row = await analyze_ett_chart(

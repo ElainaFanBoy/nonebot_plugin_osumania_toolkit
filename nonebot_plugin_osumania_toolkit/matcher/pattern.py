@@ -45,8 +45,16 @@ async def _analyze_zip_file(zip_file: Path, rate: float) -> list[str]:
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        chart_files = extract_zip_file(zip_file, temp_dir)
+        try:
+            chart_files = extract_zip_file(zip_file, temp_dir)
+        except Exception as e:
+            return [f"图包分析失败 - {e}"]
+
         results: list[str] = []
+
+        if not chart_files:
+            return ["图包中没有可分析的谱面文件。"]
+
         for chart_file in chart_files:
             try:
                 result = await _analyze_single_chart(chart_file, chart_file.name, rate)

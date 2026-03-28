@@ -304,7 +304,16 @@ async def analyze_mapview_zip(
     errors: list[str] = []
 
     try:
-        chart_files = extract_zip_file(zip_file, temp_dir)
+        try:
+            chart_files = extract_zip_file(zip_file, temp_dir)
+        except Exception as e:
+            errors.append(f"图包分析失败 - {e}")
+            return results, errors
+
+        if not chart_files:
+            errors.append("图包中没有可分析的谱面文件。")
+            return results, errors
+
         for chart_file in chart_files:
             try:
                 row = await analyze_mapview_chart(
