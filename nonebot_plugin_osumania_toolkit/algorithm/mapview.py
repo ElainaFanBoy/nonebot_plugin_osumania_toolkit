@@ -211,6 +211,15 @@ def _render_meta_title(meta_data: Any) -> str:
     return "*Failed to parse meta data*"
 
 
+def _format_parse_error_detail(error: Exception, max_len: int = 240) -> str:
+    text = str(error or "").strip().replace("\n", " ")
+    if not text:
+        return "未知解析错误"
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text
+
+
 async def analyze_mapview_chart(
     chart_file: Path,
     file_name: str,
@@ -224,14 +233,27 @@ async def analyze_mapview_chart(
     target_name = file_name
 
     if is_mc_file(str(target_file)):
-        osu_file_path = convert_mc_to_osu(str(target_file), str(cache_dir))
-        target_file = Path(osu_file_path)
-        target_name = os.path.basename(osu_file_path)
+        try:
+            osu_file_path = convert_mc_to_osu(str(target_file), str(cache_dir))
+            target_file = Path(osu_file_path)
+            target_name = os.path.basename(osu_file_path)
+        except Exception as e:
+            raise ParseError(f".mc 转 .osu 失败: {e}") from e
 
-    sr, ln_ratio, column_count = await get_rework_result(
-        str(target_file), speed_rate, od_flag, cvt_flag
-    )
-    pattern_result = await analyze_pattern_file(str(target_file), rate=speed_rate)
+    try:
+        sr, ln_ratio, column_count = await get_rework_result(
+            str(target_file), speed_rate, od_flag, cvt_flag
+        )
+    except ParseError as e:
+        detail = _format_parse_error_detail(e)
+        raise ParseError(f"Rework 解析阶段失败: {detail}") from e
+
+    try:
+        pattern_result = await analyze_pattern_file(str(target_file), rate=speed_rate)
+    except PatternParseError as e:
+        detail = _format_parse_error_detail(e)
+        raise PatternParseError(f"键型解析阶段失败: {detail}") from e
+
     meta_data = resolve_meta_data(target_file, target_name)
 
     merged_clusters = _merge_duplicate_clusters(pattern_result.report.Clusters)
@@ -326,8 +348,9 @@ async def analyze_mapview_zip(
                     cache_dir,
                 )
                 results.append(row)
-            except (ParseError, PatternParseError):
-                errors.append(f"{chart_file.name}: 谱面解析失败")
+            except (ParseError, PatternParseError) as e:
+                detail = _format_parse_error_detail(e)
+                errors.append(f"{chart_file.name}: 谱面解析失败 - {detail}")
             except (NotManiaError, PatternNotManiaError):
                 errors.append(f"{chart_file.name}: 该谱面不是 mania 模式")
             except Exception as e:

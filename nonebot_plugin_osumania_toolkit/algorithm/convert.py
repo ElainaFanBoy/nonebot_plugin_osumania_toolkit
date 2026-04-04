@@ -189,10 +189,16 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
     lines.append('')
     lines.append('[HitObjects]')
 
+    # 先转换为中间结构，便于做兼容性修正（如 LN 尾与同列同毫秒起点冲突）。
+    converted_notes = []
+    start_time_counter: Counter[tuple[int, int]] = Counter()
+
     # 音符
     for n in note:
         if n.get('type', 0) != 0:
             continue  # 跳过音效
+
+        column_idx = int(n['column'])
 
         n_beat = beat(n['beat'])
         # 找到所属 BPM 段
@@ -203,9 +209,12 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
             idx = i
         delta_beat = n_beat - beat(line[idx]['beat'])
         n_time = ms(delta_beat, bpm[idx], bpmoffset[idx])
-        x = col(n['column'], keys)
+        n_time_ms = int(n_time)
+        x = col(column_idx, keys)
+        start_time_counter[(column_idx, n_time_ms)] += 1
 
         # 长按或普通
+        end_time_ms = None
         if 'endbeat' in n:
             end_beat = beat(n['endbeat'])
             idx_end = 0
@@ -215,20 +224,64 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
                 idx_end = i
             delta_end = end_beat - beat(line[idx_end]['beat'])
             end_time = ms(delta_end, bpm[idx_end], bpmoffset[idx_end])
+            end_time_ms = int(end_time)
             type_str = '128'
         else:
             type_str = '1'
 
-        vol = n.get('vol', 100)
-        sound = n.get('sound', 0)
+        converted_notes.append(
+            {
+                'x': x,
+                'column_idx': column_idx,
+                'start_time_ms': n_time_ms,
+                'end_time_ms': end_time_ms,
+                'type_str': type_str,
+                'vol': n.get('vol', 100),
+                'sound': n.get('sound', 0),
+            }
+        )
+
+    # 兼容性处理：若 LN 结束时刻与同列起点同毫秒，向前微调 LN 结束时间，避免严格解析器冲突。
+    adjusted_tail_count = 0
+    for item in converted_notes:
+        end_time_ms = item['end_time_ms']
+        if end_time_ms is None:
+            continue
+
+        start_time_ms = item['start_time_ms']
+        column_idx = item['column_idx']
+        adjusted_end = int(end_time_ms)
+
+        while adjusted_end > start_time_ms and start_time_counter[(column_idx, adjusted_end)] > 0:
+            adjusted_end -= 1
+
+        if adjusted_end <= start_time_ms:
+            adjusted_end = start_time_ms + 1
+
+        if adjusted_end != end_time_ms:
+            item['end_time_ms'] = adjusted_end
+            adjusted_tail_count += 1
+
+    if adjusted_tail_count > 0:
+        logger.debug(
+            f".mc 转换中检测到 {adjusted_tail_count} 个 LN 尾同毫秒冲突，已自动微调结束时间提升兼容性"
+        )
+
+    for item in converted_notes:
+        x = item['x']
+        n_time_ms = item['start_time_ms']
+        end_time_ms = item['end_time_ms']
+        type_str = item['type_str']
+        vol = item['vol']
+        sound = item['sound']
 
         # osu!mania HitObject:
         # 普通键: x,y,time,type,hitSound,hitSample
         # 长按键: x,y,time,type,hitSound,endTime:hitSample
-        if 'endbeat' in n:
-            line_str = f'{x},192,{int(n_time)},{type_str},{sound},{int(end_time)}:0:0:0:{vol}:'
+        if end_time_ms is not None:
+            line_str = f'{x},192,{n_time_ms},{type_str},{sound},{end_time_ms}:0:0:0:{vol}:'
         else:
-            line_str = f'{x},192,{int(n_time)},{type_str},{sound},0:0:0:{vol}:'
+            line_str = f'{x},192,{n_time_ms},{type_str},{sound},0:0:0:{vol}:'
         lines.append(line_str)
 
     # 写入文件
