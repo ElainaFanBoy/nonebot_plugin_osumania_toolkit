@@ -1,4 +1,3 @@
-import bisect
 import json
 import zipfile
 import os
@@ -8,8 +7,8 @@ import shutil
 from nonebot.log import logger
 from pathlib import Path
 
-from ..file.osr_file_parser import osr_file
 from ..file.osu_file_parser import osu_file
+from ..file.ruleset_file_parser import load_ruleset_json, validate_ruleset_data
 
 from nonebot.adapters.onebot.v11 import (
     Bot,
@@ -91,134 +90,6 @@ async def send_forward_text_messages(
                 await bot.send(Message(item))
             else:
                 await bot.send(str(item))
-
-def match_notes_and_presses(osu: osu_file, osr: osr_file):
-    """
-    匹配物件和按下事件，返回匹配的列表。
-    参数:
-        osu: osu文件实例
-        osr: osr文件实例
-    返回:
-        list of (col, delta_t) 差值列表
-        list of (col, note_time, press_time) 详细匹配对
-    """
-    note_times_by_col = osu.note_times
-
-    # 对同一 (osu, osr) 对象复用匹配结果，减少分析与绘图重复计算。
-    cache = getattr(osr, "_match_notes_cache", None)
-    if cache is None:
-        cache = {}
-        setattr(osr, "_match_notes_cache", cache)
-
-    press_events_ref = getattr(osr, "press_events_float", None) or osr.press_events
-
-    # 通过采样签名避免仅按长度命中缓存，导致复用过期匹配结果。
-    def _events_signature(events: list[tuple[int, float]]) -> tuple:
-        n = len(events)
-        if n == 0:
-            return (0,)
-        pick_idx = sorted({0, n // 2, n - 1})
-        sample = tuple((int(events[i][0]), round(float(events[i][1]), 3)) for i in pick_idx)
-        return (n, sample)
-
-    events_sig = _events_signature(press_events_ref)
-    cache_key = (
-        id(osu),
-        id(note_times_by_col),
-        events_sig,
-        int(getattr(osr, "mod", 0) or 0),
-        float(getattr(osu, "od", 0.0) or 0.0),
-    )
-    cached = cache.get(cache_key)
-    if cached is not None:
-        cached_delta = cached[0]
-        cached_frac_count = sum(1 for _, d in cached_delta if abs(float(d) - round(float(d))) > 1e-6)
-        logger.debug(
-            f"match_notes_and_presses 命中缓存: events_sig={events_sig}, "
-            f"delta_count={len(cached_delta)}, frac_count={cached_frac_count}"
-        )
-        return cached
-
-    all_notes = [t for times in note_times_by_col.values() for t in times]
-    if not all_notes:
-        cache[cache_key] = ([], [])
-        return cache[cache_key]
-    min_note = min(all_notes)
-    max_note = max(all_notes)
-    buffer = 5000
-
-    # 获取按下事件（使用已缩放的时间，用于匹配谱面）
-    # 对于普通.osr文件：press_events是实时时间（已应用速度模组）
-    # 对于.mr转换的osr文件：press_events是逆缩放时间（用于匹配原始谱面时间）
-    press_events = press_events_ref
-
-    # 检查是否启用 Mirror 模组 (MR)
-    mod_value = getattr(osr, 'mod', 0)
-    mirror = (mod_value & 1073741824) != 0
-    if mirror:
-        total_cols = osu.column_count
-        # 将物理列映射到谱面列
-        press_events = [(total_cols - 1 - col, t) for col, t in press_events]
-
-    # 按列整理按下事件，并过滤超出时间范围的事件
-    press_by_col = {}
-    for col, t in press_events:
-        if min_note - buffer <= t <= max_note + buffer:
-            press_by_col.setdefault(col, []).append(t)
-
-    for col in press_by_col:
-        press_by_col[col].sort()
-
-    delta_list = []
-    matched_pairs = []
-    max_diff = 188 - 3 * osu.od  # 判定窗口，单位 ms
-
-    for col in note_times_by_col:
-        notes = note_times_by_col[col]
-        presses = press_by_col.get(col, [])
-        if not presses:
-            continue
-        used = [False] * len(presses)
-        for note in notes:
-            idx = bisect.bisect_left(presses, note)
-            best = None
-            best_dist = None
-            # 向左搜索
-            i = idx - 1
-            while i >= 0:
-                if not used[i]:
-                    dist = abs(presses[i] - note)
-                    if dist <= max_diff:
-                        best = i
-                        best_dist = dist
-                    break
-                i -= 1
-            # 向右搜索
-            i = idx
-            while i < len(presses):
-                if not used[i]:
-                    dist = abs(presses[i] - note)
-                    if dist <= max_diff:
-                        if best is None or dist < best_dist:
-                            best = i
-                            best_dist = dist
-                    break
-                i += 1
-            if best is not None:
-                used[best] = True
-                delta_list.append((col, presses[best] - note))
-                matched_pairs.append((col, note, presses[best]))
-    logger.debug(f"匹配到的点数量: {len(delta_list)}")
-    frac_count = sum(1 for _, d in delta_list if abs(float(d) - round(float(d))) > 1e-6)
-    delta_preview = [round(float(d), 3) for _, d in delta_list[:8]]
-    logger.debug(
-        f"match_notes_and_presses 计算完成: events_sig={events_sig}, "
-        f"frac_count={frac_count}, preview={delta_preview}"
-    )
-    logger.debug(f"匹配到的最后物件时间: {max(note for _, note, _ in matched_pairs) if matched_pairs else 0} ms")
-    cache[cache_key] = (delta_list, matched_pairs)
-    return cache[cache_key]
-
 
 def extract_zip_file(zip_path: Path, extract_dir: Path) -> list[Path]:
     """解压zip文件并返回所有.osu和.mc文件的路径列表"""
@@ -413,6 +284,23 @@ def is_mc_file(file_path: str) -> bool:
         
         return True
     except:
+        return False
+
+
+def is_ruleset_file_valid(ruleset_path: str | Path) -> bool:
+    """Check whether a ruleset path points to a structurally valid ruleset file."""
+    path = Path(ruleset_path)
+    if not path.exists() or not path.is_file():
+        return False
+
+    if path.suffix.lower() != ".ruleset":
+        return False
+
+    try:
+        data = load_ruleset_json(path)
+        result = validate_ruleset_data(data)
+        return result.is_valid
+    except Exception:
         return False
     
 def malody_mods_to_osu_mods(malody_flags: int) -> tuple:

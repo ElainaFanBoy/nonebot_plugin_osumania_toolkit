@@ -1,0 +1,181 @@
+{
+  ////////////////////////////////////////////////////////////////////////////
+  // 模板 ruleset 示例
+  // - 这是一个带注释的示例，程序实际读取 .ruleset 文件时要求是纯 JSON（不带注释）。
+  // - 本文件展示本插件支持的“Template + Ruleset”双层格式。
+  // - 实际使用时，请删除所有注释（即所有被 // 和 /* */ 包围的内容），并确保文件扩展名为 .ruleset。随后将文件置于.venv/lib/site-packages/nonebot_plugin_osumania_toolkit/rulesets/templates/目录下（或其他已配置的目录）。
+  // - Template 部分定义了一个可参数化的模板，Ruleset 部分则是使用该模板的具体规则集。
+  // - Ruleset 的结构必须满足 ruleset-description.jsonc 中的要求，且可以使用 Template.Variables 定义的变量（通过 {{var}} 占位符）来简化表达式和文本。
+  // - 我们默认您已经熟悉了 ruleset-description.jsonc 中规则集的结构和字段含义。
+  ////////////////////////////////////////////////////////////////////////////
+
+  "Template": {
+    // 模板类型
+    // - 当前实现仅支持 "formula"
+    // - 其他值会导致模板构建失败（TemplateError）
+    // - "fomula" 表示这是一个基于公式的模板，实际处理时会根据Template定义的参数和变量渲染出一个普通的ruleset。
+    "Type": "formula",
+
+    // 模板名称
+    // - 建议与文件名一致，不含 .ruleset
+    "Name": "sample-sc",
+
+    // - 模板说明（可选）
+    // - 仅用于阅读、日志和帮助信息，不参与计算
+    "Summary": "Sample SC-like template with judge parameter",
+
+    // - 主参数变量名。
+    //  注：调用 ruleset_file(("template", name, value)) 时，value 会绑定到此变量。
+    //  如使用时未指定 value，则默认值为 Template.Default（如果有定义）。
+    // - 本例中 ArgumentName=judge，所以表达式里可以直接写 judge。
+    // 额外说明：解析器还会自动放入以下内置变量：
+    // - diff: 与主参数同值（通用别名）
+    // - diff_text: 格式化后的参数文本（例如 4, 8.5），适合拼接 Name/Description
+    "ArgumentName": "judge",
+
+    // - 主参数别名数组。
+    // - 这里写 ["j"] 后，表达式里可以同时使用 judge 和 j。
+    // - 每个别名会映射到同一个参数值。
+    // - 同时，该参数还会影响用户实际使用时传入参数的方法。例如，用户输入的命令中在本例可以是judge4或j4
+    "Aliases": ["j"],
+
+    // - Default: 未传第三参数时使用的值。（如果没有本项，使用 5.0 ）
+    // - Min/Max: 参数限制范围
+    // - Precision: 小数位四舍五入；0 表示按整数行为使用。
+    //
+    // 示例：调用时传 9.37，而 Min=2 Max=9 Precision=0
+    //   -> 限制到 9
+    //   -> round(9, 0) 后仍为 9
+    "Default": 4,
+    "Min": 2,
+    "Max": 9,
+    "Precision": 0,
+
+    // 变量内容
+    // - 用于定义可复用公式变量，后续可在 Ruleset 的 {{...}} 中引用。
+    // - 变量按“可解析依赖”顺序求值：
+    //   * 如果变量 A 依赖 B，且 B 尚未可用，会暂存并在下一轮再解析。
+    //   * 若最终仍无法解析（循环依赖/未知变量），抛出异常 TemplateError。
+    //
+    // 表达式语法（基于 Python 表达式 eval，禁用 __builtins__）：
+    // - 允许：
+    //   * 算术: + - * / // % **
+    //   * 比较: < <= > >= == !=
+    //   * 布尔: and or not
+    //   * 条件表达式: a if cond else b
+    //   * 括号分组: (...)
+    // - 允许调用函数（白名单）：
+    //   * abs(x), min(...), max(...), round(x[,n]), int(x), float(x)
+    // - 不允许：
+    //   * import、open、exec、eval 等
+    //
+    // 推荐实践：
+    // - 窗口和分值表达式尽量显式写 float（如 45.0）以避免整除歧义。
+    // - 文本拼接时尽量先构造数值变量，再在 Ruleset 用 {{...}} 注入。
+    "Variables": {
+      // Interlude SC 基础窗口。
+      // judge=9 特判为 9ms，其余按 45*(10-judge)/6
+      "perfect": "(9.0 if int(judge) == 9 else 45.0 * (10.0 - float(judge)) / 6.0)",
+
+      // 各判定窗口
+      "w_marv": "perfect * 0.5",
+      "w_perf": "perfect",
+      "w_great": "perfect * 2.0",
+      "w_good": "perfect * 3.0",
+
+      // SC 的 bad 窗口：最小不低于 180ms
+      "w_bad": "max(180.0, perfect * 4.0)",
+
+      // SC miss penalty（judge 2..9）
+      "miss_penalty": "(-20.0 if int(judge) == 9 else -10.0 if int(judge) == 8 else -4.7 if int(judge) == 7 else -2.6 if int(judge) == 6 else -1.6 if int(judge) == 5 else -1.0 if int(judge) == 4 else -0.6 if int(judge) == 3 else -0.4)",
+
+      // 用于名称显示，避免出现 4.0
+      "judge_text": "int(judge)"
+    }
+  },
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Ruleset 部分
+  // - 此部分会在模板渲染后变成“普通 ruleset”对象。
+  // - 此部分的字段含义及渲染后满足的所有结构约束见 ruleset-description.jsonc。
+  // - 其中的 {{var}} 占位符会被 Template.Variables 中定义的变量替换，支持表达式求值和文本拼接两种模式。
+  // - 注意：占位符内的表达式求值结果会直接替换到最终 ruleset 中，因此必须确保表达式结果的类型和位置相符（例如 TimingWindows 需要 number 或 null，Name 需要 string）。
+  // 占位符渲染规则：
+  // 1) 纯表达式字符串
+  //      "{{expr}}"
+  //    -> 返回表达式原始类型（可能是 number / string / bool / null）
+  // 2) 混合文本字符串
+  //      "OD={{expr}}"
+  //    -> 按字符串替换；若结果是 float，会先格式化为最多 6 位小数并去尾零
+  // 注意：在Ruleset部分使用表达式求值时，注意不要写成混合文本字符串形式，例如使用"{{expr}} * 1.1"，这样会被错误渲染为字符串，导致模板无法正常被识别，应当写成"{{expr * 1.1}}"。允许使用的表达式语法同 Template.Variables。
+  ////////////////////////////////////////////////////////////////////////////
+  "Ruleset": {
+    "Name": "Sample SC J{{judge_text}}",
+    "Description": "Template-generated SC-like ruleset, judge={{judge_text}}",
+    "Judgements": [
+      {
+        "Name": "Marvellous",
+        "Color": [255, 0, 255, 255],
+        "BreaksCombo": false,
+        "TimingWindows": ["{{-w_marv}}", "{{w_marv}}"]
+      },
+      {
+        "Name": "Perfect",
+        "Color": [255, 255, 255, 0],
+        "BreaksCombo": false,
+        "TimingWindows": ["{{-w_perf}}", "{{w_perf}}"]
+      },
+      {
+        "Name": "Great",
+        "Color": [255, 0, 255, 100],
+        "BreaksCombo": false,
+        "TimingWindows": ["{{-w_great}}", "{{w_great}}"]
+      },
+      {
+        "Name": "Good",
+        "Color": [255, 0, 0, 255],
+        "BreaksCombo": true,
+        "TimingWindows": ["{{-w_good}}", "{{w_good}}"]
+      },
+      {
+        "Name": "Bad",
+        "Color": [255, 255, 0, 255],
+        "BreaksCombo": true,
+        "TimingWindows": ["{{-w_bad}}", "{{w_bad}}"]
+      },
+      {
+        "Name": "Miss",
+        "Color": [255, 255, 0, 0],
+        "BreaksCombo": true,
+        "TimingWindows": null
+      }
+    ],
+    // 注：Requirement 只能二选一：ComboBreaksAtMost 或 JudgementAtMost。
+    "Lamps": [
+      { "Name": "FC",  "Color": [255, 80, 255, 80],   "Requirement": { "ComboBreaksAtMost": 0 } },
+      { "Name": "SDG", "Color": [255, 160, 255, 160], "Requirement": { "JudgementAtMost": [2, 9] } },
+      { "Name": "MFC", "Color": [255, 160, 255, 255], "Requirement": { "JudgementAtMost": [1, 0] } }
+    ],
+    "Grades": [
+      { "Name": "D", "Accuracy": 0.0,  "Color": [255, 200, 163, 155] },
+      { "Name": "B", "Accuracy": 0.9,  "Color": [255, 149, 193, 220] },
+      { "Name": "A", "Accuracy": 0.95, "Color": [255, 134, 227, 183] },
+      { "Name": "S", "Accuracy": 0.98, "Color": [255, 246, 234, 128] }
+    ],
+    "HitMechanics": {
+      "NotePriority": { "Interlude": 90.0 },
+      "GhostTapJudgement": null
+    },
+    "HoldMechanics": {
+      "CombineHeadAndTail": {
+        "HeadJudgementOr": [-180.0, 180.0, 3, 3]
+      }
+    },
+    "Accuracy": {
+      "PointsPerJudgement": [1.0, 0.9, 0.5, -0.5, "{{miss_penalty}}", "{{miss_penalty}}"]
+    },
+    "Formatting": {
+      "DecimalPlaces": "TWO"
+    }
+  }
+}

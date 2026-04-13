@@ -1,0 +1,223 @@
+{
+  ////////////////////////////////////////////////////////////////////////////
+  // Ruleset 示例
+  // - 这是一个带注释的模板，程序实际读取 .ruleset 文件时要求是纯 JSON（不带注释）。
+  // - 实际使用时，请删除所有注释（即所有被 // 和 /* */ 包围的内容），并确保文件扩展名为 .ruleset。
+  // - 时间窗口单位：ms / rate（即毫秒，实际使用时会和播放速率结合）。在文件中直接写浮点数（例：-43.0, 43.0）。
+  // - 约束提醒：
+  //   * Judgements 数组必须至少含 1 个元素；若使用 PointsPerJudgement，其数组长度必须等于 Judgements.Length。
+  //   * Judgements 中带有 TimingWindows 的项必须按“由严格到宽松”排序（early 越负越严格，late 越正越宽松）。
+  //   * Grades 的 Accuracy 值必须严格递增（从低到高）。
+  //   * Lamps 中若使用 JudgementAtMost，索引必须在 [0, Judgements.Length-1] 范围内，且 Lamps 必按严格性排序。
+  //   * NotePriority.Interlude 的数值（cbrush_threshold）必须 >= 0 且不能超过 timing windows 的极限。
+  //   * CombineHeadAndTail（OsuMania）要求 Judgements.Length == 6 且必须用 PointsPerJudgement。
+  //   * WifeCurve 的 judge 值通常限制在 2..9。
+  //   * 任意 timing window 的绝对值不得超过 500 ms。
+  ////////////////////////////////////////////////////////////////////////////
+
+  // 规则集显示名（必填）
+  "Name": "示例规则集名称",
+
+  // 规则集描述（可选）
+  "Description": "对这个规则集的简短说明，例如：模拟 osu! / Etterna / Quaver 的判定/计分方式。",
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Judgements（判定列表）
+  // - 必须是一个数组，且按如下顺序排列：从最严格（最难）到最宽松（最差）。
+  // - 每一项用于描述某个等级的判定：名字、颜色、是否断连、以及可选的时间窗口。
+  // - TimingWindows = null 表示“无显式窗口”，通常该判定被视为兜底（当所有明确窗口都不匹配时会落到最后一项）。
+  ////////////////////////////////////////////////////////////////////////////
+  "Judgements": [
+    {
+      // 判定名称（显示）
+      "Name": "Marvelous",
+
+      // 颜色，序列化为 [A, R, G, B]（0..255）
+      // 用于在图表中显示该判定时的颜色
+      // A = alpha（透明通道），通常写 255 表示不透明
+      "Color": [255, 0, 255, 255],
+
+      // 是否断连击（如果为 true，该判定会把当前连击视作断开）
+      "BreaksCombo": false,
+
+      // 时间窗口 [early, late]
+      // - early 为负值（提前多少 ms），late 为正值（落后多少 ms）
+      // - 玩家按键时间偏移如果在 early..late 范围内则属于此判定
+      // - 可以写 null 表示“无显式时窗（跳过窗口匹配）”
+      "TimingWindows": [-18.0, 18.0]
+    },
+    {
+      "Name": "Perfect",
+      "Color": [255, 255, 255, 0],
+      "BreaksCombo": false,
+      "TimingWindows": [-43.0, 43.0]
+    },
+    {
+      "Name": "Miss",
+      "Color": [255, 255, 80, 80],
+      "BreaksCombo": true,
+      // null 表示此项不参与按时间窗口的直接匹配（通常是兜底判定）
+      "TimingWindows": null
+    }
+  ],
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Lamps（成就）
+  // - lamps 数组推荐按从严格到宽松排序（假设后项比前项更宽松 / 更容易达成）。
+  // - 每个 Lamp 由 Name、Color 和 Requirement 构成。Requirement 有两种常见形式：
+  //     1) ComboBreaksAtMost: N ： 断连次数必须 <= N
+  //     2) JudgementAtMost: [judgement_index, count]： 指定判定索引出现次数 <= count
+  // - judgement_index 指 Judgements 数组的索引（0 对应第一个/最严格的判定，1 对应第二个，以此类推。）
+  ////////////////////////////////////////////////////////////////////////////
+  "Lamps": [
+    {
+      "Name": "MFC",
+      "Color": [255, 160, 255, 255],
+      // JudgementAtMost: [判定索引, 阈值]
+      // 例： [1, 0] 表示判定索引 1（例如 Perfect）出现次数必须 <= 0 才能达成 MFC
+      "Requirement": { "JudgementAtMost": [1, 0] }
+    },
+    {
+      "Name": "FC",
+      "Color": [255, 80, 255, 80],
+      // ComboBreaksAtMost: 0 表示不得发生任何 combo break（Full Combo）
+      "Requirement": { "ComboBreaksAtMost": 0 }
+    }
+  ],
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Grades（评级）
+  // - 用于在结算时给玩家显示一个“等级”（例如 D/C/B/A/S/SS）
+  // - Accuracy 数值代表达到该等级所需的最小准确率（范围通常在0~1之间）
+  // - 数组内 Accuracy 必须严格递增
+  ////////////////////////////////////////////////////////////////////////////
+  "Grades": [
+    { "Name": "D", "Accuracy": 0.0,  "Color": [255, 255, 80, 80] },
+    { "Name": "C", "Accuracy": 0.7,  "Color": [255, 255, 80, 255] },
+    { "Name": "B", "Accuracy": 0.8,  "Color": [255, 0, 80, 255] },
+    { "Name": "A", "Accuracy": 0.9,  "Color": [255, 0, 255, 100] },
+    { "Name": "S", "Accuracy": 0.95, "Color": [255, 246, 234, 128] },
+    { "Name": "SS", "Accuracy": 1.0, "Color": [255, 255, 255, 160] }
+  ],
+
+  ////////////////////////////////////////////////////////////////////////////
+  // HitMechanics（按键分配/特殊行为）
+  // - NotePriority 决定当多个候选音符存在时，把一次按键分配给哪个音符（见下三种策略）
+  // - 通常来说，NotePriority 的选择会影响玩家的手感（例如连崩等）和成绩转换的准确性，因此建议根据目标游戏的机制来设定。
+  // - GhostTapJudgement（可选）：
+  //     * 如果设置为整数（判定索引），当发生 ghost tap（误触或空敲）时会按该判定计分，同时必须使用PointsPerJudgement（见下方）计算得分。
+  //     * 常见场景下为 null（表示 ghost tap 不计分）
+  ////////////////////////////////////////////////////////////////////////////
+  "HitMechanics": {
+    // NotePriority 有三种表示法（只需其中一种）：
+    // 1) 字符串 "OsuMania" - 优先把按键分配给“最早的可命中音符”
+    // 2) 字符串 "Etterna" - 优先选择“时间上最接近按键的音符（nearest）”
+    // 3) 对象 { "Interlude": number } - Interlude 模式并带参数 cbrush_threshold（>=0）
+    //    Interlude: 默认也选择最早，但如果与更晚的音符时间上非常接近（小于阈值），会尝试分配给更近的音符（用于减少 note-lock / cbrush）
+    //
+    // 示例：下面使用 Interlude 模式并给出阈值 90（单位 ms / rate）
+    "NotePriority": { "Interlude": 90 },
+
+    // ghost tap 判定索引（或 null）
+    "GhostTapJudgement": null
+  },
+
+  ////////////////////////////////////////////////////////////////////////////
+  // HoldMechanics（长按 / 释放的判定策略）
+  // - 这是一个“枚举/多态”字段：不同变体的表示方式不同，下面列出所有变体并分别说明如何写与含义。
+  // - 在文件中只需启用其中一种变体（该模板中启用了 OnlyRequireHold 作为示例），
+  //   其余变体以注释形式给出使用方法与示例。
+  //
+  // 变体一：OnlyRequireHold (仅需要按下；单一数值)
+  //   "HoldMechanics": { "OnlyRequireHold": <release_window> }
+  //   - 含义：按下（head）阶段会判定并计分；释放仅用于确认是否 drop/overhold，不另行判分。
+  //   - release_window：>=0 的数值（单位 ms / rate），表示允许多少释放偏差。
+  //
+  // 变体二：JudgeReleasesSeparately（为不同的 release 时间指定不同的窗口；数组）
+  //   "HoldMechanics": { "JudgeReleasesSeparately": [ windows_array, judgement_if_overheld ] }
+  //   - windows_array 必须与 Judgements 长度和顺序一致，每项要么是 [early, late]，要么是 null（跳过该判定）
+  //   - 在 release 时用 windows_array 来匹配判定并计分；若 overheld 则使用 judgement_if_overheld（判定索引）
+  //
+  // 变体三：OnlyJudgeReleases（只在释放时判定）
+  //   "HoldMechanics": { "OnlyJudgeReleases": <judgement_if_dropped> }
+  //   - 只在 release 时使用 ms_to_judgement(release_delta) 判定并计分；
+  //   - judgement_if_dropped：一个判定索引，用于 dropped/overhold 等异常情形时取较差判定
+  //
+  // 变体四：CombineHeadAndTail（合并头尾判定）：
+  //   "HoldMechanics": { "CombineHeadAndTail": { "OsuMania": { Window320, Window300, Window200, Window100, Window50, Window0, WindowOverhold200, WindowOverhold100 } } }
+  //     - OsuMania 子变体：需要完整的 OsuLnWindows（所有窗口 >=0），并且要求 Judgements.Length == 6 且必须使用 PointsPerJudgement 精度。
+  //     - 该模式与Osu!mania的判定方式类似，其中每个值代表Head+Tail总误差/2的窗口大小；后两个值为Overhold的特殊窗口。
+  //
+  //   或者
+  //   "HoldMechanics": { "CombineHeadAndTail": { "HeadJudgementOr": [ early_window, late_window, judgement_if_dropped, judgement_if_overheld ] } }
+  //     - HeadJudgementOr 子变体: 以 head 判定为主，只有在 dropped/overheld 时才采用指定的替代判定。
+  ////////////////////////////////////////////////////////////////////////////
+  
+  // OnlyRequireHold 示例：
+  "HoldMechanics": { "OnlyRequireHold": 150 },
+  
+  // JudgeReleasesSeparately 示例：
+  // "HoldMechanics": { "JudgeReleasesSeparately": [ [ [-27.0,27.0], [-64.5,64.5], null ], 4 ] }
+
+  // CombineHeadAndTail(OsuMania) 示例：
+  /*
+  "HoldMechanics": {
+    "CombineHeadAndTail": {
+      "OsuMania": {
+        "Window320": 19.5,
+        "Window300": 44.5,
+        "Window200": 73.5,
+        "Window100": 103.5,
+        "Window50": 127.5,
+        "Window0": 164.5,
+        "WindowOverhold200": 19.5,
+        "WindowOverhold100": 79.5
+      }
+    }
+  }
+  */
+  // CombineHeadAndTail(HeadJudgementOr) 示例：
+  // "HoldMechanics": { "CombineHeadAndTail": { "HeadJudgementOr": [ -180.0, 180.0, 3, 3 ] } }
+
+  // OnlyJudgeReleases 示例：
+  // "HoldMechanics": { "OnlyJudgeReleases": 2 }
+  
+
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Accuracy（精度/计分方式）
+  // - 两种互斥表示：
+  //   1) PointsPerJudgement: [p0, p1, p2, ...]（数组长度必须 == Judgements.Length）
+  //        * 每次命中按照对应判定索引取权重作为“点数”
+  //        * Accuracy = sum(points_scored) / max_possible_points
+  //   2) WifeCurve: judge（整数，常见 2..9）
+  //        * 使用连续的 Wife3 曲线把偏差 delta 映射为点数（更接近 Etterna 的评分方式）
+  //
+  // - 注意：某些规则（如 GhostTapJudgement、CombineHeadAndTail）要求必须使用 PointsPerJudgement
+  ////////////////////////////////////////////////////////////////////////////
+  "Accuracy": {
+    // 数组长度应等于 Judgements 的数量（示例：3 个判定则此处长度为 3）
+    "PointsPerJudgement": [1.0, 0.75, 0.4]
+  },
+  // 或者使用 Wife3 曲线，judge 通常在 2..9
+  // "Accuracy": { "WifeCurve": 6 }
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Formatting（显示格式）
+  // - 目前只包含 DecimalPlaces：用于 FormatAccuracy 将计算出的精度格式化为百分比字符串展示。
+  // - 枚举值在 JSON 中用字符串："TWO" / "THREE" / "FOUR"
+  // - 程序在靠近 100% 的情况下会根据 DecimalPlaces 使用更高精度显示（避免显示 “100.00%” 丢失微小差异）
+  // - 注意：此字段仅影响显示格式，不影响实际计算。如果你不清楚这个字段的作用，可以保持默认值 TWO。
+  ////////////////////////////////////////////////////////////////////////////
+  "Formatting": {
+    "DecimalPlaces": "TWO"
+  }
+
+  ////////////////////////////////////////////////////////////////////////////
+  // 部署说明：
+  // - 编辑完成后，请确保去掉所有注释，保存为纯 JSON 并将文件拓展名改为 .ruleset。
+  // - 随后置于.venv/lib/site-packages/nonebot_plugin_osumania_toolkit/rulesets/（或自定义的插件目录）下即可被程序识别并使用。
+  // - 如果你要制作一批规则，推荐你在上述目录下创建一个子目录（例如 "Malody"）来存放相关的规则文件以避免歧义。用户在实际使用时可以通过 子目录名/规则文件名 来指定规则集（例如 Malody/A）。
+  // - 如果你想制作一个可参数化的规则集（例如根据 OD 自动调整窗口，而这里 OD 可以是小数），可以参考 ruleset-template-description.jsonc 使用模板功能。
+  ////////////////////////////////////////////////////////////////////////////
+}

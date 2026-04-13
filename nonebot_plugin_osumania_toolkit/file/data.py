@@ -1,14 +1,16 @@
-﻿import re
+﻿import json
+import re
+from pathlib import Path
 
 
 # 辅助函数
-def format_dan_list(dans: list, items_per_line: int = 5) -> str:
+def format_list(dans: list, items_per_line: int = 5) -> str:
     """
-    格式化段位列表，每行显示指定数量的段位
+    格式化列表数据，每行显示指定数量的数据
     
     参数:
-        dans: 段位名列表
-        items_per_line: 每行显示的段位数量
+        dans: 列表
+        items_per_line: 每行显示的数据数量
     
     返回:
         格式化后的字符串
@@ -78,9 +80,68 @@ def format_dan_list_grouped(dans: list, items_per_line: int = 5) -> str:
     formatted_sections = []
     for group_name in ordered_group_names:
         formatted_sections.append(f"[{group_name}]")
-        formatted_sections.append(format_dan_list(groups[group_name], items_per_line))
+        formatted_sections.append(format_list(groups[group_name], items_per_line))
 
     return "\n\n".join(formatted_sections)
+
+
+def _build_cvtscore_ruleset_listing_text() -> str:
+    """构建 /cvtscore 可用模板与具体 ruleset 列表。"""
+    root = Path(__file__).resolve().parent.parent / "rulesets"
+    templates_dir = root / "templates"
+
+    lines: list[str] = [""]
+
+    template_rows: list[str] = []
+    try:
+        template_files = sorted(list(templates_dir.glob("*.ruleset")), key=lambda p: p.stem.lower())
+    except Exception:
+        template_files = []
+
+    for template_file in template_files:
+        name = template_file.stem
+        summary = "(无说明)"
+
+        try:
+            content = template_file.read_text(encoding="utf-8-sig")
+            raw = json.loads(content)
+            template_meta = raw.get("Template") if isinstance(raw, dict) else None
+            if isinstance(template_meta, dict):
+                raw_name = template_meta.get("Name")
+                raw_summary = template_meta.get("Summary")
+                if isinstance(raw_name, str) and raw_name.strip():
+                    name = raw_name.strip()
+                if isinstance(raw_summary, str) and raw_summary.strip():
+                    summary = raw_summary.strip()
+        except Exception:
+            pass
+        
+        if summary:
+            template_rows.append(f"{name}: {summary}")
+        else:
+            template_rows.append(name)
+
+    lines.append("[模板]")
+    if template_rows:
+        lines.extend(template_rows)
+    else:
+        lines.append("(无)")
+
+    try:
+        group_dirs = sorted(
+            [d for d in root.iterdir() if d.is_dir() and d.name.lower() != "templates"],
+            key=lambda d: d.name.lower(),
+        )
+    except Exception:
+        group_dirs = []
+    
+    for group_dir in group_dirs:
+        names = sorted([p.stem for p in group_dir.glob("*.ruleset")], key=lambda x: x.lower())
+        lines.append("")
+        lines.append(f"[{group_dir.name}]")
+        lines.append(format_list(names, items_per_line=6) if names else "(无)")
+
+    return "\n".join(lines)
 
 # 所有数据
 
@@ -101,7 +162,8 @@ class omtk_help_data:
         "9. /percy 或 /投皮 - 投皮修改\n"
         "10. /acc 或 /单曲 - 单曲ACC计算\n"
         "11. /mapview - 谱面键型分析与难度估计\n"
-        "12. /ett - 将谱面按Etterna方式计算难度"
+        "12. /ett - 将谱面按Etterna方式计算难度\n"
+        "13. /cvtscore 或 /转换 - 按目标规则重算回放成绩"
     )
     # help_text 结构: (命令, 命令名称, 页码, 总页码, 帮助文本)
     help_text = [("rework", "星数重算", "1", "1",
@@ -153,7 +215,32 @@ class omtk_help_data:
             "/mapview 参数说明：\n- bid: 以 b 开头，后跟整数，从官网获取谱面。或输入网址。\n- mods: 以 + 开头，后跟模组名缩写（支持 HR/EZ、DT/HT、IN/HO、DC/NC）。不区分大小写，格式如雨沐。\n- speed: 以 x 或 * 开头，后跟倍速数值（如 x1.5）。倍速必须在 0.25 到 3.0 之间。\n- OD: 以 OD 开头, OD值必须在 -15 到 15 之间。"),
             
             ("ett", "Etterna难度计算", "1", "1",
-             "你可以回复包含 .osu/.mc 文件的消息，或回复包含 .osz/.mcz 的消息，或使用 bid/网址 指定谱面来将谱面按 Etterna 方式计算难度。\n命令格式：/ett b<bid> x[speed]\n示例：/ett b4094064 x1.25\n警告：图包分析开销较大，请勿滥用。\n注意：1. 如果你回复了一个包含谱面/图包文件的消息，命令将忽略bid。\n2. 该命令仅支持 rate（如 x1.5），不支持 mods、OD 覆写和 IN/HO。")
+             "你可以回复包含 .osu/.mc 文件的消息，或回复包含 .osz/.mcz 的消息，或使用 bid/网址 指定谱面来将谱面按 Etterna 方式计算难度。\n命令格式：/ett b<bid> x[speed]\n示例：/ett b4094064 x1.25\n警告：图包分析开销较大，请勿滥用。\n注意：1. 如果你回复了一个包含谱面/图包文件的消息，命令将忽略bid。\n2. 该命令仅支持 rate（如 x1.5），不支持 mods、OD 覆写和 IN/HO。"),
+
+            ("cvtscore", "成绩转换", "1", "3",
+             "你可以使用 /cvtscore (/转换) 将同一回放按目标 ruleset 重算成绩。\n"
+             "输入：回放(.osr/.mr) + 谱面(bid 或 .osu/.mc) + 目标 ruleset。\n"
+             "命令示例：\n"
+             "1. /cvtscore Quaver/chill sc diff4 （然后发送回放）\n"
+             "2. /cvtscore b4094064 -sv2 （然后发送回放和谱面）\n"
+             "3. 直接发送 /cvtscore 进入交互模式。\n"
+             "目标 ruleset 写法：模板优先（如 sc diff4、wife3 j7），具体规则用 Group/Name（如 Quaver/chill）。\n"
+             "参数匹配大小写不敏感。查看参数详解：/omtk cvtscore 2；查看全部 ruleset：/omtk cvtscore 3"),
+
+            ("cvtscore", "成绩转换", "2", "3",
+             "/cvtscore 参数详解：\n"
+             "1. 回放文件：支持 .osr / .mr。\n"
+             "2. 谱面输入：.osu / .mc，或 b<bid> / mania 链接。\n"
+             "3. sv2 开关：-sv2 / sv2 / +sv2（开启）；-nosv2 / nosv2 / sv1（关闭）。\n"
+             "4. 目标 ruleset：\n"
+             "   - 模板优先：sc j4、wife3 j7、template/sc diff4\n"
+             "   - 具体规则：Quaver/chill、Malody/A\n"
+             "   - 模板参数支持：diff 4、diff4、diff=4、j7\n"
+             "5. 交互流程：回放 -> 谱面 -> 目标 ruleset。\n"
+             "6. 大小写不敏感：上述所有参数均支持大小写混输（如 B4094064、Template/SC、J7）。"),
+
+            ("cvtscore", "成绩转换", "3", "3",
+             "全部可用模板和 ruleset：\n" + _build_cvtscore_ruleset_listing_text())
             ]
     command_aliases = {
         "按压": "pressingtime",
@@ -165,6 +252,7 @@ class omtk_help_data:
         "键型": "pattern",
         "投皮": "percy",
         "单曲": "acc",
+        "转换": "cvtscore",
         }
 
 # parser数据
@@ -837,7 +925,7 @@ class sr_intervals_data:
     ]
     
 
-def _refresh_acc_help_page() -> None:
+def _build_acc_help_page() -> None:
     """使用本地段位数据刷新 /omtk acc 第3页，避免循环导入。"""
     dan_list_text = "全部内置段位列表:\n" + format_dan_list_grouped(sorted(dan_data.dan_notes.keys()))
     for index, item in enumerate(omtk_help_data.help_text):
@@ -847,4 +935,4 @@ def _refresh_acc_help_page() -> None:
             break
 
 
-_refresh_acc_help_page()
+_build_acc_help_page()

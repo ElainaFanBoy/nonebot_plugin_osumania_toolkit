@@ -1,10 +1,11 @@
 import numpy as np
 from nonebot import get_plugin_config
 
-from ...algorithm.utils import match_notes_and_presses
+from ...algorithm.match import match_notes_and_presses
 from ...config import Config
 from ...file.osr_file_parser import osr_file
 from ...file.osu_file_parser import osu_file
+from ...file.ruleset_file_parser import ruleset_file
 from .detectors_delta_chord import detect_chord_near_zero_cluster, detect_chord_sync_template
 from .detectors_delta_context import detect_gap_ghost_context_v2
 from .detectors_delta_correlation import detect_column_autocorr_and_drift, detect_cross_correlation
@@ -13,6 +14,66 @@ from .helpers import build_chord_groups
 from .types import AnalysisResult, Signal
 
 config = get_plugin_config(Config)
+
+_SCOREV2_MOD_BIT = 536870912
+
+
+def _has_scorev2_mod(osr_obj: osr_file) -> bool:
+    mod_value = int(getattr(osr_obj, "mod", 0) or 0)
+    if mod_value & _SCOREV2_MOD_BIT:
+        return True
+
+    mods = getattr(osr_obj, "mods", [])
+    if isinstance(mods, list):
+        return any(str(m).lower() == "scorev2" for m in mods)
+    return False
+
+
+def _build_default_rulesets(osu_obj: osu_file, osr_obj: osr_file) -> list[ruleset_file]:
+    od_value = float(getattr(osu_obj, "od", 8.0) or 8.0)
+    prefer_sv2 = _has_scorev2_mod(osr_obj)
+    order = ["osu-sv2", "osu"] if prefer_sv2 else ["osu", "osu-sv2"]
+
+    built: list[ruleset_file] = []
+    for name in order:
+        rs = ruleset_file(("template", name, od_value))
+        if rs.status == "OK":
+            built.append(rs)
+    return built
+
+
+def _match_for_delta(osr_obj: osr_file, osu_obj: osu_file) -> dict:
+    fallback_result: dict | None = None
+    first_error: str | None = None
+
+    for rs in _build_default_rulesets(osu_obj, osr_obj):
+        for use_chart_time in (True, False):
+            match_result = match_notes_and_presses(
+                osu_obj,
+                osr_obj,
+                rs,
+                use_chart_time=use_chart_time,
+            )
+            if match_result.get("status") != "OK":
+                if first_error is None:
+                    first_error = str(match_result.get("error") or "未知错误")
+                continue
+
+            if match_result.get("delta_list"):
+                return match_result
+
+            if fallback_result is None:
+                fallback_result = match_result
+
+    if fallback_result is not None:
+        return fallback_result
+
+    return {
+        "status": "Error",
+        "error": first_error or "默认匹配规则构建失败",
+        "delta_list": [],
+        "matched_pairs": [],
+    }
 
 
 def _compute_local_density(sorted_notes: list[float], radius_ms: int) -> np.ndarray:
@@ -50,7 +111,19 @@ def analyze_delta_t(osr_obj: osr_file, osu_obj: osu_file) -> dict:
         依赖函数异常会向上传递。
     """
 
-    delta_list, matched_pairs = match_notes_and_presses(osu_obj, osr_obj)
+    match_result = _match_for_delta(osr_obj, osu_obj)
+    if match_result.get("status") != "OK":
+        msg = match_result.get("error") or "未知错误"
+        return {
+            "cheat": False,
+            "sus": False,
+            "reason": f"匹配失败: {msg}",
+            "stats": {},
+            "signals": [],
+        }
+
+    delta_list = list(match_result.get("delta_list", []))
+    matched_pairs = list(match_result.get("matched_pairs", []))
     if not delta_list:
         return {"cheat": False, "sus": False, "reason": "无匹配数据", "stats": {}, "signals": []}
 

@@ -11,6 +11,7 @@ from .percy import percy
 from .pattern import pattern
 from .mapview import mapview
 from .ett import ett
+from .cvtscore import cvtscore
 
 __all__ = ["pressingtime",
         #    "rework",
@@ -24,5 +25,6 @@ __all__ = ["pressingtime",
             "percy",
             "pattern",
             "mapview",
-            "ett"
+            "ett",
+            "cvtscore"
            ]

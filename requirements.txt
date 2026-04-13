@@ -1,5 +1,5 @@
-# nonebot_plugin_osumania_toolkit 依赖文件
-# 2026-03-21
+# nonebot_plugin_osumania_toolkit Requirements
+# 2026-04-08
 
 nonebot2>=2.3.0
 nonebot-adapter-onebot>=2.0.0

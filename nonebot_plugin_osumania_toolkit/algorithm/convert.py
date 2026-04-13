@@ -27,16 +27,14 @@ def col(column, keys):
 
 def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> str:
     """
-    将 .mc 文件转换为 .osu 文件
-    本函数修改自 https://github.com/Jakads/malody2osu/blob/master/convert.py
-    
+    Summery:
+        将 .mc 文件转换为 .osu 文件。
+        本函数修改自 https://github.com/Jakads/malody2osu/blob/master/convert.py
     Args:
         mc_file_path: .mc 文件路径
         output_dir: 输出目录，如果为 None 则输出到原文件所在目录
-        
     Returns:
         转换后的 .osu 文件路径
-        
     Raises:
         ValueError: 如果文件不是有效的 .mc 文件
         Exception: 转换过程中的其他错误
@@ -295,31 +293,34 @@ def convert_mc_to_osu(mc_file_path: str, output_dir: Optional[str] = None) -> st
 
 def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
     """
-    将 mr_file 对象转换为 osr_file 实例，使其兼容现有绘图和分析代码。
-    返回的 osr_file 实例已经设置好所有属性，可直接用于后续流程。
+    summery:
+        将 mr_file 对象转换为 osr_file 实例，并保持旧字段兼容。
+        .mr 时间通常已是 1.0x chart 时间，因此本转换默认保持 real/chart 一致，
+        但仍显式填充 press_events_real / press_events_chart 双时间线字段。
+    Args:
+        mr_obj: 解析后的 mr_file 对象。
+    Returns:
+        可直接用于旧流程的 osr_file 对象。
     """
-
-    # 创建一个 osr_file 实例，跳过实际文件解析
     osr = osr_file.__new__(osr_file)
     osr._init_derived_attrs()
-    # 设置基本属性
+
+    # 兼容 __init__ 中的配置字段（__new__ 绕过初始化时需要手动补齐）
+    osr.assume_replay_times_scaled = False
+    osr.keep_float_times = True
+    osr.log_level_override = None
+    osr.allow_force_no_scale = True
+
+    # 基础属性
     osr.file_path = mr_obj.file_path
-    osr.status = mr_obj.status  # 可能为 "OK" 或 "ParseError"
+    osr.status = mr_obj.status
     osr.player_name = "ConvertedFromMalody"
     osr.mod, osr.mods = malody_mods_to_osu_mods(mr_obj.mods_flags)
-    
-    # 计算速度因子（用于时间缩放）
-    # Malody 速度模组：Dash=1.2x, Slow=0.8x, Rush=1.5x
-    # 注意：时间戳已经应用了速度模组，所以我们需要逆缩放
-    speed_factor = 1.0
-    if mr_obj.mods_flags & (1 << 4):   # Dash (bit 5)
-        speed_factor *= 1.2
-    if mr_obj.mods_flags & (1 << 8):   # Slow (bit 9)
-        speed_factor *= 0.8
-    if mr_obj.mods_flags & (1 << 5):   # Rush (bit 6) - 对应 DoubleTime
-        speed_factor *= 1.5
-    osr.speed_factor = speed_factor
-    osr.corrector = 1.0 / speed_factor if speed_factor != 0 else 1.0
+
+    # .mr 默认不做速度反缩放，real/chart 时间线一致。
+    osr.speed_factor = 1.0
+    osr.corrector = 1.0
+    osr.scale_applied = False
 
     # 判定映射：best->320, cool->200, good->100, miss->0
     osr.judge = {
@@ -330,122 +331,62 @@ def convert_mr_to_osr(mr_obj: mr_file) -> osr_file:
         "50": 0,
         "0": mr_obj.miss_count,
     }
-    # 设为 0 兼容性优先
-    osr.score = 0  
+    osr.score = 0
     osr.ratio = 0
-    # 以malody计分方式计算 acc 
+
+    # 按 Malody 计分方式计算 acc
     tot_obj = mr_obj.best_count + mr_obj.cool_count + mr_obj.good_count + mr_obj.miss_count
     if tot_obj > 0:
         osr.acc = (mr_obj.best_count * 100 + mr_obj.cool_count * 75 + mr_obj.good_count * 40) / (tot_obj * 100) * 100
     else:
         osr.acc = 0.0
-    # 时间戳转换：Unix 秒 -> datetime
-    osr.timestamp = datetime.datetime.fromtimestamp(mr_obj.timestamp) if mr_obj.timestamp else datetime.datetime.min
 
-    # HP数据不存在
+    osr.timestamp = datetime.datetime.fromtimestamp(mr_obj.timestamp) if mr_obj.timestamp else datetime.datetime.min
     osr.life_bar_graph = ""
 
-    # 以下属性从动作序列生成
-    osr.pressset = [[] for _ in range(18)]
-    osr.intervals = []
-    osr.intervals_raw = []
-    osr.press_times = []
-    osr.press_times_float = []
-    osr.press_times_raw = []
-    osr.press_events = []
-    osr.press_events_float = []
-    osr.press_events_raw = []
-    osr.play_data = []
+    # 直接继承 mr parser 已构建的数据（real/chart 在 mr 中一致）。
+    osr.pressset_raw = [list(col) for col in mr_obj.pressset_raw]
+    osr.pressset = [list(col) for col in mr_obj.pressset]
+    osr.intervals_raw = list(mr_obj.intervals_raw)
+    osr.intervals = list(mr_obj.intervals)
 
-    # 按时间排序动作
-    actions = sorted(mr_obj.actions, key=lambda x: x[0])
-    if not actions:
-        osr.status = "tooFewKeys"
+    osr.press_times_raw = list(mr_obj.press_times_raw)
+    osr.press_events_raw = list(mr_obj.press_events_raw)
+
+    osr.press_times_real_float = list(mr_obj.press_times_real_float)
+    osr.press_events_real_float = list(mr_obj.press_events_real_float)
+    osr.press_times_real = list(mr_obj.press_times_real)
+    osr.press_events_real = list(mr_obj.press_events_real)
+
+    osr.press_times_chart_float = list(mr_obj.press_times_chart_float)
+    osr.press_events_chart_float = list(mr_obj.press_events_chart_float)
+    osr.press_times_chart = list(mr_obj.press_times_chart)
+    osr.press_events_chart = list(mr_obj.press_events_chart)
+
+    # 旧字段兼容：保持 chart 时间线
+    osr.press_times_float = list(osr.press_times_chart_float)
+    osr.press_events_float = list(osr.press_events_chart_float)
+    osr.press_times = list(osr.press_times_chart)
+    osr.press_events = list(osr.press_events_chart)
+
+    osr.play_data = list(mr_obj.play_data)
+    osr.replay_data_real = list(mr_obj.replay_data_real)
+    osr.replay_data_chart = list(mr_obj.replay_data_chart)
+
+    if osr.intervals_raw:
+        osr.sample_rate = osr._estimate_sample_rate(osr.intervals_raw)
+    else:
+        osr.sample_rate = float("inf")
+
+    if mr_obj.status != "OK":
+        osr.status = mr_obj.status
         return osr
 
-    # 记录当前每列的按键状态 (True/False)
-    current_state = [False] * 18
-    # 记录每列按下开始时间（原始时间）
-    pressed_start_raw = [None] * 18
-    # 记录每列按下开始时间（逆缩放时间）
-    pressed_start_scaled = [None] * 18
-    # 上一个事件的时间（用于计算 time_delta）
-    prev_time_raw = None
-    prev_time_scaled = None
-    # 当前累积时间（用于绝对时间）
-    for time_raw, action, col in actions:
-        if col >= 18:
-            continue  # 忽略超出轨道
-        
-        # 计算逆缩放时间（用于与谱面匹配）
-        time_scaled = (float(time_raw) / speed_factor) if speed_factor != 0 else float(time_raw)
-        
-        # 根据 action 更新状态
-        if action == 1:  # 按下
-            if not current_state[col]:
-                current_state[col] = True
-                pressed_start_raw[col] = time_raw
-                pressed_start_scaled[col] = time_scaled
-                # 记录按下事件（使用逆缩放时间，用于与谱面匹配）
-                osr.press_times_float.append(float(time_scaled))
-                osr.press_events_float.append((col, float(time_scaled)))
-                osr.press_times.append(int(round(time_scaled)))
-                osr.press_events.append((col, int(round(time_scaled))))
-                # 同时保存原始时间
-                osr.press_times_raw.append(time_raw)
-                osr.press_events_raw.append((col, time_raw))
-        elif action == 2:  # 释放
-            if current_state[col]:
-                current_state[col] = False
-                if pressed_start_raw[col] is not None:
-                    duration_raw = time_raw - pressed_start_raw[col]
-                    duration_scaled = time_scaled - pressed_start_scaled[col]
-                    if duration_raw >= 0:
-                        osr.pressset[col].append(int(round(float(duration_scaled))))
-                    pressed_start_raw[col] = None
-                    pressed_start_scaled[col] = None
-        # 构建当前时刻的按键掩码
-        keys_mask = 0
-        for c in range(18):
-            if current_state[c]:
-                keys_mask |= (1 << c)
-
-        # 生成 play_data 事件：需要相对时间差（使用原始时间）
-        if prev_time_raw is None:
-            delta_raw = time_raw
-            delta_scaled = time_scaled
-        else:
-            delta_raw = time_raw - prev_time_raw
-            delta_scaled = time_scaled - prev_time_scaled
-        if delta_raw < 0:
-            delta_raw = 0
-        if delta_scaled < 0:
-            delta_scaled = 0
-        # 创建事件对象（使用原始时间差，保持内部一致性）
-        event = ReplayEvent(int(round(float(delta_raw))), keys_mask)
-        osr.play_data.append(event)
-        osr.intervals.append(delta_raw)
-        osr.intervals_raw.append(delta_raw)
-        prev_time_raw = time_raw
-        prev_time_scaled = time_scaled
-
-    # 计算采样率
-    if osr.intervals:
-        interval_counts = Counter(osr.intervals)
-        most_common_interval, _ = interval_counts.most_common(1)[0]
-        osr.sample_rate = 1000 / most_common_interval if most_common_interval > 0 else float('inf')
-    else:
-        osr.sample_rate = float('inf')
-
-    # 过滤无效轨道（少于5次按压的轨道视为无效，但保留原样，仅用于状态）
     valid_pressset = [p for p in osr.pressset if len(p) > 5]
     if len(valid_pressset) < 2:
         osr.status = "tooFewKeys"
     else:
         osr.status = "OK"
-
-    # 时间戳已包含速度模组，无需再缩放
-    osr.corrector = 1.0
 
     logger.debug(f"按下事件总数(len(press_events)): {len(osr.press_events)}")
     logger.debug(f"按下事件总数(len(press_times))：{len(osr.press_times)}")

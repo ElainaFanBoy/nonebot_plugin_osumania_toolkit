@@ -15,7 +15,7 @@ from ..file.mr_file_parser import mr_file
 
 from ..file.draw import run_plot_comprehensive
 from ..file.file import safe_filename, download_file, download_file_by_id, cleanup_temp_file, get_file_url
-from ..algorithm.utils import parse_cmd, is_mc_file
+from ..algorithm.utils import parse_bid_or_url, parse_cmd, is_mc_file
 from ..algorithm.analyze import run_analyze_cheating
 from ..algorithm.convert import convert_mr_to_osr, convert_mc_to_osu
 
@@ -165,7 +165,7 @@ async def handle_first(bot: Bot, event: MessageEvent, state: T_State):
         if file_err_msg:
             state["status"] = "Fail"
             await analyze.finish("错误:\n" + "\n".join(file_err_msg))
-        # 直接返回，进入下一个 got 阶段(交互模式),由 @delta.got 处理
+        # 直接返回，进入下一个 got 阶段(交互模式),由 @analyze.got 处理
         await analyze.send("未提供谱面 ID, 请发送对应的谱面文件。输入 1 跳过（将执行无谱面分析），输入 0 取消。")
         return
 
@@ -223,6 +223,54 @@ async def handle_file(bot: Bot, state: T_State, user_msg: Message = Arg("user_fi
             finally:
                 if osr_path and osr_path.exists():
                         asyncio.create_task(cleanup_temp_file(osr_path))
+                if osu_path and osu_path.exists():
+                    asyncio.create_task(cleanup_temp_file(osu_path))
+                if output_path and Path(output_path).exists():
+                    asyncio.create_task(cleanup_temp_file(Path(output_path)))
+        elif text:
+            parsed_bid, bid_err = parse_bid_or_url(text)
+            if bid_err is not None:
+                await analyze.reject(f"{bid_err}\n请发送谱面文件，或输入 b<bid>/mania 链接，输入 1 跳过，输入 0 取消。")
+            if parsed_bid is None:
+                await analyze.reject("输入无效，请发送谱面文件，或输入 b<bid>/mania 链接，输入 1 跳过，输入 0 取消。")
+
+            try:
+                osu_path, _osu_name = await download_file_by_id(CACHE_DIR, int(parsed_bid))
+                osu = osu_file(osu_path)
+                osu.process()
+
+                file_err_msg = []
+                match osu.status:
+                    case "NotMania":
+                        file_err_msg.append("该谱面不是 Mania 模式。")
+                    case "init":
+                        file_err_msg.append("谱面尚未process。")
+                    case _:
+                        pass
+                if file_err_msg:
+                    await analyze.finish("错误:\n" + "\n".join(file_err_msg))
+
+                await analyze.send("已收到谱面链接，处理中，请稍候...")
+                output_path = await run_plot_comprehensive(str(CACHE_DIR), osr, osu)
+                result = await run_analyze_cheating(osr, osu)
+                reason_str = "\n".join(result["reasons"]) if result["reasons"] else "无分析结果。"
+                if result["cheat"] or result["sus"]:
+                    if result["cheat"]:
+                        await analyze.send(MessageSegment.image(f"file://{output_path}"))
+                        await analyze.finish(f"<!>此成绩检测到作弊：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+                    else:
+                        await analyze.send(MessageSegment.image(f"file://{output_path}"))
+                        await analyze.finish(f"<*>此成绩检测到可疑：\n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+                else:
+                    await analyze.send(MessageSegment.image(f"file://{output_path}"))
+                    await analyze.finish(f"分析完成: \n{reason_str}\n仅供参考，请结合其他信息进行判断。")
+            except FinishedException:
+                pass
+            except Exception as e:
+                await analyze.send(f"错误：{e}")
+            finally:
+                if osr_path and osr_path.exists():
+                    asyncio.create_task(cleanup_temp_file(osr_path))
                 if osu_path and osu_path.exists():
                     asyncio.create_task(cleanup_temp_file(osu_path))
                 if output_path and Path(output_path).exists():

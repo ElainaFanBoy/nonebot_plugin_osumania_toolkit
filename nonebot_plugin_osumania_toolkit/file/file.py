@@ -395,39 +395,90 @@ def cleanup_old_cache(cache_dir: Path, max_age_hours: int = 24):
 
         current_time = time.time()
         max_age_seconds = max_age_hours * 3600
-        cleaned_count = 0
+        cleaned_file_count = 0
+        cleaned_dir_count = 0
         kept_count = 0
         total_size = 0
 
         logger.info(f"开始清理缓存，最大保留时间: {max_age_hours} 小时")
 
-        # 遍历缓存目录中的所有文件
-        for file_path in cache_dir.iterdir():
-            if not file_path.is_file():
-                continue
-
+        # 遍历缓存目录中的一级子项（文件与目录）
+        for target_path in cache_dir.iterdir():
             try:
-                # 获取文件修改时间
-                file_age = current_time - file_path.stat().st_mtime
-                file_age_hours = file_age / 3600
+                if not _is_safe_cleanup_target(target_path):
+                    logger.warning(f"跳过非安全缓存路径: {target_path}")
+                    continue
 
-                # 如果文件超过最大保留时间，删除它
-                if file_age > max_age_seconds:
-                    file_size = file_path.stat().st_size
-                    file_path.unlink()
-                    cleaned_count += 1
-                    total_size += file_size
-                    logger.info(f"清理过期缓存文件: {file_path.name} (已存在 {file_age_hours:.1f} 小时，超过 {max_age_hours} 小时)")
-                else:
-                    kept_count += 1
-                    logger.debug(f"保留缓存文件: {file_path.name} (已存在 {file_age_hours:.1f} 小时，未超过 {max_age_hours} 小时)")
+                if target_path.is_symlink():
+                    logger.warning(f"跳过符号链接路径: {target_path}")
+                    continue
+
+                if target_path.is_file():
+                    file_age = current_time - target_path.stat().st_mtime
+                    file_age_hours = file_age / 3600
+                    if file_age > max_age_seconds:
+                        file_size = target_path.stat().st_size
+                        target_path.unlink()
+                        cleaned_file_count += 1
+                        total_size += file_size
+                        logger.info(
+                            f"清理过期缓存文件: {target_path.name} "
+                            f"(已存在 {file_age_hours:.1f} 小时，超过 {max_age_hours} 小时)"
+                        )
+                    else:
+                        kept_count += 1
+                        logger.debug(
+                            f"保留缓存文件: {target_path.name} "
+                            f"(已存在 {file_age_hours:.1f} 小时，未超过 {max_age_hours} 小时)"
+                        )
+                    continue
+
+                if target_path.is_dir():
+                    # 目录使用“目录树内最新修改时间”判断是否过期，避免误删仍在更新中的子内容。
+                    latest_mtime = target_path.stat().st_mtime
+                    dir_size = 0
+                    for sub in target_path.rglob('*'):
+                        try:
+                            if sub.is_symlink():
+                                continue
+                            sub_stat = sub.stat()
+                            latest_mtime = max(latest_mtime, sub_stat.st_mtime)
+                            if sub.is_file():
+                                dir_size += sub_stat.st_size
+                        except Exception:
+                            continue
+
+                    dir_age = current_time - latest_mtime
+                    dir_age_hours = dir_age / 3600
+                    if dir_age > max_age_seconds:
+                        shutil.rmtree(target_path)
+                        cleaned_dir_count += 1
+                        total_size += dir_size
+                        logger.info(
+                            f"清理过期缓存目录: {target_path.name} "
+                            f"(最新修改距今 {dir_age_hours:.1f} 小时，超过 {max_age_hours} 小时)"
+                        )
+                    else:
+                        kept_count += 1
+                        logger.debug(
+                            f"保留缓存目录: {target_path.name} "
+                            f"(最新修改距今 {dir_age_hours:.1f} 小时，未超过 {max_age_hours} 小时)"
+                        )
+                    continue
+
+                logger.debug(f"跳过未知路径类型: {target_path}")
+
             except Exception as e:
-                logger.warning(f"清理文件 {file_path.name} 时出错: {e}")
+                logger.warning(f"清理路径 {target_path.name} 时出错: {e}")
 
-        if cleaned_count > 0:
-            logger.info(f"缓存清理完成: 删除 {cleaned_count} 个文件，保留 {kept_count} 个文件，释放 {total_size/1024/1024:.2f} MB 空间")
+        total_cleaned = cleaned_file_count + cleaned_dir_count
+        if total_cleaned > 0:
+            logger.info(
+                f"缓存清理完成: 删除 {cleaned_file_count} 个文件、{cleaned_dir_count} 个目录，"
+                f"保留 {kept_count} 个路径，释放 {total_size/1024/1024:.2f} MB 空间"
+            )
         else:
-            logger.info(f"缓存清理完成: 没有发现过期文件，保留 {kept_count} 个文件")
+            logger.info(f"缓存清理完成: 没有发现过期路径，保留 {kept_count} 个路径")
 
     except Exception as e:
         logger.error(f"清理缓存目录时发生错误: {e}")
