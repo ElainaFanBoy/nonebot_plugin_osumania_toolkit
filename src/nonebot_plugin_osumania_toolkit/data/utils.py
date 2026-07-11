@@ -25,27 +25,27 @@ def _get_dan_group_name(dan_name: str) -> str:
 
     if dan_name.startswith("wds0_"):
         return "wds0"
-    if dan_name.startswith("xfpsb"):
+    elif dan_name.startswith("xfpsb"):
         return "xfpsb"
-    if dan_name.startswith("7kln"):
+    elif dan_name.startswith("7kln"):
         return "7kln"
-    if dan_name.startswith("7k"):
+    elif dan_name.startswith("7k"):
         return "7k"
-    if dan_name.startswith("ln"):
+    elif dan_name.startswith("ln"):
         return "ln"
-    if dan_name.startswith("senpaiex"):
+    elif dan_name.startswith("senpaiex"):
         return "senpaiex"
-    if dan_name.startswith("senpai"):
+    elif dan_name.startswith("senpai"):
         return "senpai"
-    if dan_name.startswith("spex"):
+    elif dan_name.startswith("spex"):
         return "spex"
-    if re.match(r"^ex(?:\d+v\d(?:\.\d+)?|fv\d)$", dan_name):
+    elif re.match(r"^ex(?:\d+v\d(?:\.\d+)?|fv\d)$", dan_name):
         return "ex"
-    if re.match(r"^\d+danv\d$", dan_name):
+    elif re.match(r"^\d+danv\d$", dan_name):
         return "danv"
-    if re.match(r"^rf\d+$", dan_name) or dan_name in greek_names:
+    elif re.match(r"^rf\d+$", dan_name) or dan_name in greek_names:
         return "rf/reform"
-    if dan_name == "haku":
+    else:
         return "misc"
     return "other"
 
