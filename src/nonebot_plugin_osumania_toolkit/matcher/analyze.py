@@ -74,10 +74,7 @@ async def handle_first(bot: Bot, event: MessageEvent, state: T_State):
     osr = None
 
     try:
-        success = await download_file(file_url, osr_path)
-        if not success:
-            state["status"] = "Fail"
-            await analyze.finish("文件下载失败，请稍后重试。")
+        await download_file(file_url, osr_path)
 
         if file_name.lower().endswith(".mr"):
             state["status"] = "Malody"
@@ -263,9 +260,7 @@ async def handle_file(bot: Bot, state: T_State, user_msg: Message = Arg("user_fi
 
         osu_path = CACHE_DIR / safe_filename(file_name)
         try:
-            success = await download_file(file_url, osu_path)
-            if not success:
-                await analyze.finish("文件下载失败，请稍后重试。")
+            await download_file(file_url, osu_path)
                 
             chart_file = osu_path
             mc_file = is_mc_file(chart_file)

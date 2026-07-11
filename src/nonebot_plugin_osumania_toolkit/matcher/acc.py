@@ -180,10 +180,11 @@ async def acc_handle_second(matcher: Matcher, bot: Bot, state: T_State, message:
         
         # 下载文件
         downloaded_path = CACHE_DIR / safe_filename(file_name)
-        success = await download_file(file_url, downloaded_path)
-        if not success:
+        try:
+            await download_file(file_url, downloaded_path)
+        except Exception as e:
             state["status"] = "Fail"
-            await acc.finish("文件下载失败，请稍后再试。")
+            await acc.finish(f"文件下载失败：{e}")
 
         osu_path = downloaded_path
         converted_path = None

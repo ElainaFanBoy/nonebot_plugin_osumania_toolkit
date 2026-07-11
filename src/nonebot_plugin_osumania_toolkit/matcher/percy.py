@@ -55,10 +55,7 @@ async def handle_percy(bot: Bot, event: MessageEvent):
     output_path = CACHE_DIR / f"processed_{safe_name}"
 
     try:
-        success = await download_file(file_url, file_path)
-        if not success:
-            await percy.send("图片下载失败，请稍后重试。")
-            return
+        await download_file(file_url, file_path)
 
         if d is None:
             current_d = get_current_d(file_path)

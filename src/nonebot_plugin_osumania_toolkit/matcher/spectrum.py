@@ -52,10 +52,7 @@ async def handle_spectrum(bot: Bot, event: MessageEvent):
     file_path = CACHE_DIR / safe_name
 
     try:
-        success = await download_file(file_url, file_path)
-        if not success:
-            await spectrum.send("文件下载失败，请稍后重试。")
-            return
+        await download_file(file_url, file_path)
 
         if file_name.lower().endswith(".mr"):
             mr_obj = await asyncio.to_thread(mr_file, file_path)

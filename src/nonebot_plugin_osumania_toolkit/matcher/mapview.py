@@ -60,11 +60,7 @@ async def handle_mapview(bot: Bot, event: MessageEvent):
                 await mapview.finish("请回复 .osu/.mc/.osz/.mcz 格式的谱面文件。")
 
             tmp_file = CACHE_DIR / file_name
-            if not await download_file(file_url, tmp_file):
-                await mapview.finish(
-                    "下载失败：文件可能过大或链接无效，请检查并重试。\n"
-                    "建议：可以删除图包内的媒体文件（音频/背景视频/图片）后再重新打包上传。"
-                )
+            await download_file(file_url, tmp_file)
 
             if file_name.lower().endswith((".osz", ".mcz")):
                 await mapview.send(f"已收到图包：{file_name}，正在分析，请稍候...")
@@ -160,7 +156,7 @@ async def handle_mapview(bot: Bot, event: MessageEvent):
         error_text = str(e)
         if "超过" in error_text or "过大" in error_text:
             await mapview.finish(
-                "分析失败：文件过大。\n"
+                f"分析失败：{e}\n"
                 "建议：可以删除图包内的媒体文件（音频/背景视频/图片）后再重新打包上传。"
             )
         elif "max() iterable argument is empty" in error_text:

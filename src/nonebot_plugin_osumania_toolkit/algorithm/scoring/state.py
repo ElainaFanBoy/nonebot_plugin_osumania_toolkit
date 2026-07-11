@@ -53,9 +53,10 @@ async def load_replay_from_file_seg(bot: Any, file_seg: Any, state: dict[str, An
         return "请发送 .osr 或 .mr 回放文件。"
 
     replay_path = cache_dir / safe_filename(file_name)
-    success = await download_file(file_url, replay_path)
-    if not success:
-        return "回放文件下载失败，请稍后重试。"
+    try:
+        await download_file(file_url, replay_path)
+    except Exception as e:
+        return f"回放文件下载失败：{e}"
 
     # 即使后续解析失败，也保留路径用于统一清理。
     state["replay_path"] = replay_path
@@ -104,9 +105,10 @@ async def load_chart_from_file_seg(bot: Any, file_seg: Any, state: dict[str, Any
         return "请发送 .osu 或 .mc 谱面文件。"
 
     downloaded_path = cache_dir / safe_filename(file_name)
-    success = await download_file(file_url, downloaded_path)
-    if not success:
-        return "谱面文件下载失败，请稍后重试。"
+    try:
+        await download_file(file_url, downloaded_path)
+    except Exception as e:
+        return f"谱面文件下载失败：{e}"
 
     # 即使后续解析失败，也保留路径用于统一清理。
     state["downloaded_chart_path"] = downloaded_path
