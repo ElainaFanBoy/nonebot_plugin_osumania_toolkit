@@ -110,7 +110,7 @@ async def acc_handle_first(matcher: Matcher, event: MessageEvent, state: T_State
     # 给定段位名模式
     elif dan_name and acc_str:
         if not validate_dan_name(dan_name, sv2_flag): # 二次验证，确保段位名和 sv2 标志匹配，否则后续计算会出问题
-            await acc.reject(f"当前段位{dan_name}暂不支持ScoreV2, 或段位名有误。请确认段位名或移除 -sv2 参数，或重新输入段位名:")
+            await acc.reject(f"当前段位{dan_name}暂不支持ScoreV2, 或段位名有误。请确认段位名/移除 -sv2 参数，或使用bid自动分析，或重新输入段位名:")
         state["mode"] = "predefined"
         if acc_str:
             state["status"] = "Ready"
@@ -126,7 +126,7 @@ async def acc_handle_first(matcher: Matcher, event: MessageEvent, state: T_State
     # 用户未提供任何信息，进入交互模式，需要先询问段位名或谱面
     else:
         state["mode"] = "interactive"
-        await acc.send("请输入要计算的段位名，或发送谱面文件，或输入自定义物量。输入0取消。")
+        await acc.send("请输入要计算的段位名(使用/omtk acc 3查看全部可用段位)，或发送谱面文件，或输入自定义物量。输入0取消。")
         return
 
 @acc.got("handle_second")
@@ -226,7 +226,7 @@ async def acc_handle_second(matcher: Matcher, bot: Bot, state: T_State, message:
             state["display_name"] = file_name
         
         # 已保存文件并进入文件模式，使用reject重启本handler以获取信息
-        await acc.reject(f"已收到文件: {state['display_name']}\n请对文件回复并发送单曲个数和sv2标识（均可选），用空格分开；或不回复直接发送acc变化。发送0以取消。")
+        await acc.reject(f"已收到文件: {state['display_name']}\n请发送单曲个数和sv2标识（均可选），用空格分开；或不回复直接发送acc变化。发送0以取消。")
         return
     
     # 不是文件，检查文本输入
@@ -240,7 +240,7 @@ async def acc_handle_second(matcher: Matcher, bot: Bot, state: T_State, message:
     # -r 仅允许在首轮命令中使用
     if any(p.lower() == "-r" for p in re.split(r"\s+", text_input) if p):
         state["reject_time"] += 1
-        await acc.reject("参数 -r 仅支持在首次命令中输入。请重新输入:")
+        await acc.reject("参数 -r 仅支持在首次交互中输入。请重新输入:")
     
     # 检查是否为acc变化
     # 从上个reject的文件模式下 获取 acc变化 处理发送的文件并跳转到第三部分
@@ -270,7 +270,7 @@ async def acc_handle_second(matcher: Matcher, bot: Bot, state: T_State, message:
         parts = [p for p in re.split(r"\s+", text_input) if p]
         if len(parts) > 2:
             state["reject_time"] += 1
-            await acc.reject("输入格式错误。请对文件回复并发送单曲个数和sv2标识（均可选），用空格分开；或直接发送acc变化。发送0以取消。请重新输入:")
+            await acc.reject("输入格式错误。请发送单曲个数和sv2标识（均可选），用空格分开；或直接发送acc变化。发送0以取消。请重新输入:")
         
         num_songs = None
         sv2_flag = False
@@ -286,7 +286,7 @@ async def acc_handle_second(matcher: Matcher, bot: Bot, state: T_State, message:
                 sv2_flag = True
             else:
                 state["reject_time"] += 1
-                await acc.reject("无效的输入。请对文件回复并发送单曲个数和sv2标识（均可选），用空格分开；或直接发送acc变化。发送0以取消。请重新输入:")
+                await acc.reject("无效的输入。请发送单曲个数和sv2标识（均可选），用空格分开；或直接发送acc变化。发送0以取消。请重新输入:")
         
         state["num_songs"] = num_songs if num_songs else 4 # 默认4首歌
         state["sv2_flag"] = sv2_flag
@@ -380,7 +380,7 @@ async def acc_handle_second(matcher: Matcher, bot: Bot, state: T_State, message:
     
     # 无效输入
     state["reject_time"] += 1
-    await acc.reject("输入无效。请根据上一个消息的提示发送正确的内容，或输入0取消操作。\n请重新输入:")
+    await acc.reject(f"输入无效。{core_text}不是支持的段位名，也没有检测到物量或ACC变化。请根据上一个消息的提示发送正确的内容，或输入0取消操作。\n请重新输入:")
 
 @acc.got("handle_third")
 async def acc_handle_third(state: T_State, message: Message = Arg("handle_third")):
