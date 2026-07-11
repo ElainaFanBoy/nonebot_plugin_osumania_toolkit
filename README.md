@@ -36,15 +36,15 @@
 <img src="img/mapview.jpg" alt="mapview" width="400">
 <p>2. 单曲acc计算</p>
 <p>这里使用了rte作为例子，用于展示自动划分功能</p>
-<img src="img/acc.jpg" alt="mapview" width="400">
+<img src="img/acc.jpg" alt="acc" width="400">
 <p>3. 投皮修改</p>
-<img src="img/percy.jpg" alt="mapview" width="400">
+<img src="img/percy.jpg" alt="percy" width="400">
 <p>4. 键型分析</p>
-<img src="img/pattern.jpg" alt="mapview" width="400">
+<img src="img/pattern.jpg" alt="pattern" width="400">
 <p>5. Etterna难度计算</p>
-<img src="img/ett.jpg" alt="mapview" width="400">
+<img src="img/ett.jpg" alt="ett" width="400">
 <p>6. 成绩转换</p>
-<img src="img/cvtscore.jpg" alt="mapview" width="400">
+<img src="img/cvtscore.jpg" alt="cvtscore" width="400">
 </details>
 
 ## 安装方法
