@@ -136,7 +136,7 @@ async def download_file(url: str, save_path: Path) -> None:
             # 检查文件大小
             file_size = local_file_path.stat().st_size
             if file_size > MAX_FILE_SIZE:
-                raise Exception(f"文件过大（{file_size / 1024 / 1024:.2f}MB）超过限制（{config.max_file_size_mb}MB）：{local_file_path}")
+                raise Exception(f"文件过大（{file_size / 1024 / 1024:.2f}MB）超过限制（{config.max_file_size_mb}MB）")
 
             logger.info(f"从本地路径复制文件：{local_file_path} -> {save_path}")
             await asyncio.to_thread(shutil.copy2, local_file_path, save_path)
@@ -154,12 +154,12 @@ async def download_file(url: str, save_path: Path) -> None:
                             try:
                                 size = int(content_length)
                                 if size > MAX_FILE_SIZE:
-                                    raise Exception(f"文件过大（{size / 1024 / 1024:.2f}MB）超过限制（{config.max_file_size_mb}MB）：{url}")
+                                    raise Exception(f"文件过大（{size / 1024 / 1024:.2f}MB）超过限制（{config.max_file_size_mb}MB）")
                             except ValueError:
                                 pass
                         content = await resp.read()
                         if len(content) > MAX_FILE_SIZE:
-                            raise Exception(f"下载中发现文件超过限制（{config.max_file_size_mb}MB），中止下载：{url}")
+                            raise Exception(f"下载中发现文件超过限制（{config.max_file_size_mb}MB），中止下载")
 
                         await asyncio.to_thread(save_path.write_bytes, content)
                         return
