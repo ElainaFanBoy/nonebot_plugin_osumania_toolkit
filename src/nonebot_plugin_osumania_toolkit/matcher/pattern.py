@@ -212,6 +212,8 @@ async def handle_pattern(bot: Bot, event: MessageEvent):
                 chart_file = tmp_file
                 await pattern.send(f"已收到文件：{file_name}，请稍候...")
                 result_rows = [await _analyze_single_chart(chart_file, file_name, rate=1.0)]
+            else:
+                result_rows = [await _analyze_single_chart(tmp_file, file_name, rate=1.0)]
 
             await _send_pattern_rows(bot, event, result_rows, detail_mode)
             await pattern.finish()
